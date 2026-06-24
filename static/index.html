@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DBMapper — Agentic Schema Migration</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #0f1117;
+  --surface:   #1a1d27;
+  --surface2:  #22263a;
+  --border:    #2e3147;
+  --accent:    #6c63ff;
+  --accent-dim:#3d3a6e;
+  --text:      #e2e4f0;
+  --muted:     #7b7fa6;
+  --green:     #22c55e;
+  --amber:     #f59e0b;
+  --red:       #ef4444;
+  --radius:    8px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 14px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px 16px 60px;
+}
+
+header { width: 100%; max-width: 960px; margin-bottom: 24px; }
+header h1 { font-size: 22px; font-weight: 700; }
+header p  { color: var(--muted); font-size: 13px; margin-top: 4px; }
+
+/* Step indicator */
+.steps {
+  display: flex;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  width: 100%; max-width: 960px;
+  margin-bottom: 20px;
+}
+.step {
+  flex: 1;
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  border-right: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+}
+.step:last-child { border-right: none; }
+.step.active { background: var(--accent-dim); color: var(--text); }
+.step.done   { color: var(--green); }
+.step-num {
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; flex-shrink: 0;
+}
+.step.active .step-num { background: var(--accent); color: #fff; }
+.step.done   .step-num { background: var(--green);  color: #fff; }
+
+/* Cards */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  width: 100%; max-width: 960px;
+}
+.card + .card { margin-top: 16px; }
+.card h2 { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+.card h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* Drop zone */
+.dropzone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 32px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .2s, background .2s;
+}
+.dropzone:hover, .dropzone.dragover {
+  border-color: var(--accent);
+  background: rgba(108,99,255,.06);
+}
+.dropzone p    { color: var(--muted); font-size: 13px; margin-top: 6px; }
+.dropzone .icon{ font-size: 28px; }
+
+/* File list */
+.file-list { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+.file-item {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 7px 12px;
+}
+.file-item .name { flex: 1; font-size: 13px; }
+.badge {
+  font-size: 10px; font-weight: 700;
+  padding: 2px 6px; border-radius: 4px;
+  text-transform: uppercase; letter-spacing: .5px;
+}
+.badge-data { background: rgba(108,99,255,.2); color: var(--accent); }
+.badge-ddl  { background: rgba(34,197,94,.15);  color: var(--green); }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border-radius: var(--radius);
+  border: none; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: opacity .15s, background .15s;
+  white-space: nowrap;
+}
+.btn:disabled { opacity: .38; cursor: not-allowed; }
+.btn-primary   { background: var(--accent); color: #fff; }
+.btn-primary:hover:not(:disabled)   { background: #7c73ff; }
+.btn-secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+.btn-secondary:hover:not(:disabled) { border-color: var(--accent); }
+.btn-ghost     { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+.btn-ghost:hover:not(:disabled)     { color: var(--text); }
+.btn-danger    { background: rgba(239,68,68,.15); color: var(--red); border: 1px solid rgba(239,68,68,.3); }
+.btn-remove { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 16px; padding: 2px 4px; border-radius: 4px; }
+.btn-remove:hover { color: var(--red); background: rgba(239,68,68,.1); }
+
+.actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; flex-wrap: wrap; }
+
+/* Progress log */
+.progress-log { display: flex; flex-direction: column; gap: 6px; }
+.log-item {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 13px; padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.log-item:last-child { border-bottom: none; }
+.log-icon { width: 20px; text-align: center; flex-shrink: 0; }
+@keyframes spin { to { rotate: 1turn; } }
+.spinner {
+  width: 14px; height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  display: inline-block; flex-shrink: 0;
+}
+
+/* Table navigator */
+.table-nav {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 16px;
+  margin-bottom: 16px;
+}
+.table-nav-btn {
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); border-radius: 6px;
+  width: 28px; height: 28px; cursor: pointer;
+  font-size: 14px; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.table-nav-btn:disabled { opacity: .3; cursor: not-allowed; }
+.table-nav-btn:hover:not(:disabled) { border-color: var(--accent); }
+.table-nav-label {
+  flex: 1; font-weight: 600; font-size: 14px;
+}
+.table-nav-sub { color: var(--muted); font-size: 12px; }
+
+/* Table schema info chips */
+.col-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.col-chip {
+  font-size: 11px; padding: 3px 8px; border-radius: 12px;
+  border: 1px solid var(--border); color: var(--muted);
+  display: flex; align-items: center; gap: 4px;
+}
+.col-chip.pk  { border-color: var(--amber); color: var(--amber); }
+.col-chip.fk  { border-color: var(--accent); color: var(--accent); }
+.col-chip.req { border-color: var(--red); color: var(--red); }
+
+/* Mapping table */
+.mapping-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th {
+  text-align: left; padding: 8px 10px;
+  color: var(--muted); font-weight: 500;
+  border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+td { padding: 6px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: rgba(255,255,255,.02); }
+
+select.inline-select {
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px; padding: 4px 8px;
+  font-size: 12px; width: 100%; min-width: 130px; cursor: pointer;
+}
+select.inline-select:focus { outline: none; border-color: var(--accent); }
+
+/* Confidence bar */
+.conf-wrap { display: flex; align-items: center; gap: 8px; min-width: 90px; }
+.conf-bar  { height: 5px; border-radius: 3px; background: var(--border); flex: 1; overflow: hidden; }
+.conf-fill { height: 100%; border-radius: 3px; transition: width .3s; }
+.conf-high { background: var(--green); }
+.conf-mid  { background: var(--amber); }
+.conf-low  { background: var(--red);   }
+.conf-pct  { font-size: 11px; color: var(--muted); white-space: nowrap; width: 30px; text-align: right; }
+
+/* Validation results */
+.validation-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.val-card {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px 16px;
+}
+.val-card.ok      { border-left: 3px solid var(--green); }
+.val-card.warning { border-left: 3px solid var(--amber); }
+.val-card.error   { border-left: 3px solid var(--red);   }
+.val-table-name { font-weight: 600; font-size: 14px; margin-bottom: 8px; }
+.val-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 4px; }
+.val-row span:last-child { color: var(--text); font-weight: 500; }
+.val-badge {
+  display: inline-block; font-size: 10px; font-weight: 700;
+  padding: 2px 7px; border-radius: 10px; margin-top: 8px;
+  text-transform: uppercase; letter-spacing: .5px;
+}
+.val-badge.ok      { background: rgba(34,197,94,.15);  color: var(--green); }
+.val-badge.warning { background: rgba(245,158,11,.15); color: var(--amber); }
+.val-badge.error   { background: rgba(239,68,68,.15);  color: var(--red);   }
+
+/* ERD */
+.erd-wrap {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px;
+  overflow: auto; margin-top: 8px;
+}
+.erd-svg { display: block; background: #0f1117; border-radius: 6px; }
+
+/* Migration summary table */
+.summary-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.summary-table th, .summary-table td { padding: 7px 12px; border-bottom: 1px solid var(--border); text-align: left; }
+.summary-table th { color: var(--muted); font-weight: 500; }
+.summary-table tr:last-child td { border-bottom: none; }
+.summary-total { font-size: 18px; font-weight: 700; color: var(--green); margin-top: 12px; }
+
+/* Download row */
+.download-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+.table-nav-info { flex: 1; }
+.done-actions { margin-top: 12px; }
+.val-placeholder { color: var(--muted); font-size: 13px; }
+
+/* Misc */
+.section-sep { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+.error-banner {
+  background: rgba(239,68,68,.1); border: 1px solid var(--red);
+  color: var(--red); border-radius: var(--radius);
+  padding: 10px 14px; font-size: 13px; margin-top: 12px;
+}
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>DBMapper</h1>
+  <p>Agentic schema migration — CSV &amp; JSON → SQLite</p>
+</header>
+
+<div class="steps">
+  <div class="step active" id="step-1"><span class="step-num">1</span> Upload</div>
+  <div class="step"        id="step-2"><span class="step-num">2</span> Profiling</div>
+  <div class="step"        id="step-3"><span class="step-num">3</span> Review</div>
+  <div class="step"        id="step-4"><span class="step-num">4</span> Done</div>
+</div>
+
+<!-- ── Panel 1: Upload ─────────────────────────────────────────────────── -->
+<div class="card" id="panel-upload">
+  <h2>Upload files</h2>
+  <div class="dropzone" id="dropzone" tabindex="0" role="button"
+       aria-label="Drop files or click to browse">
+    <div class="icon">📂</div>
+    <strong>Drop files here or click to browse</strong>
+    <p>Accept: .csv, .json (data files) and exactly one .sql (DDL)</p>
+  </div>
+  <input type="file" id="file-input" multiple accept=".csv,.json,.sql" class="hidden">
+  <div class="file-list" id="file-list"></div>
+  <div id="upload-error" class="error-banner hidden"></div>
+  <div class="actions">
+    <button type="button" class="btn btn-primary" id="btn-start" disabled>Start Profiling →</button>
+  </div>
+</div>
+
+<!-- ── Panel 2: Profiling ─────────────────────────────────────────────── -->
+<div class="card hidden" id="panel-profiling">
+  <h2>Pipeline Progress</h2>
+  <div class="progress-log" id="profiling-log"></div>
+  <div id="profiling-error" class="error-banner hidden"></div>
+</div>
+
+<!-- ── Panel 3: Review ───────────────────────────────────────────────── -->
+<div class="card hidden" id="panel-review">
+  <h2>Proposed Mappings</h2>
+
+  <!-- Table navigator -->
+  <div class="table-nav">
+    <button type="button" class="table-nav-btn" id="btn-prev-table" disabled>&#8592;</button>
+    <div class="table-nav-info">
+      <div class="table-nav-label" id="table-nav-label">—</div>
+      <div class="table-nav-sub"  id="table-nav-sub">Loading…</div>
+    </div>
+    <button type="button" class="table-nav-btn" id="btn-next-table" disabled>&#8594;</button>
+  </div>
+
+  <!-- Target column overview chips -->
+  <div class="col-chips" id="col-chips"></div>
+
+  <!-- Mapping table for current target table -->
+  <div class="mapping-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Target Column</th>
+          <th>Type</th>
+          <th>Source File</th>
+          <th>Source Column</th>
+          <th>Confidence</th>
+          <th>Reason</th>
+        </tr>
+      </thead>
+      <tbody id="mapping-tbody"></tbody>
+    </table>
+  </div>
+
+  <div id="review-error" class="error-banner hidden"></div>
+
+  <hr class="section-sep">
+  <h3>Schema Diagram</h3>
+  <div class="erd-wrap" id="erd-wrap-review"></div>
+
+  <div class="actions">
+    <button type="button" class="btn btn-ghost"   id="btn-back">← Back</button>
+    <button type="button" class="btn btn-primary" id="btn-confirm" disabled>Confirm &amp; Migrate →</button>
+  </div>
+</div>
+
+<!-- ── Panel 4: Done ─────────────────────────────────────────────────── -->
+<div class="card hidden" id="panel-done">
+  <h2>Migration Complete</h2>
+
+  <!-- Live migration progress (shown while migrating) -->
+  <div id="migration-live" class="hidden">
+    <div class="progress-log" id="migration-log"></div>
+    <hr class="section-sep">
+  </div>
+
+  <!-- Summary table (shown after done) -->
+  <div id="migration-summary" class="hidden">
+    <h3>Rows Loaded</h3>
+    <table class="summary-table" id="summary-table">
+      <thead><tr><th>Table</th><th>File</th><th>Rows</th></tr></thead>
+      <tbody id="summary-tbody"></tbody>
+    </table>
+    <div class="summary-total" id="total-rows"></div>
+  </div>
+
+  <hr class="section-sep">
+
+  <!-- Validation -->
+  <div id="validation-section">
+    <h3>Migration Validation</h3>
+    <div class="validation-grid" id="validation-grid">
+      <div class="val-placeholder">Running validation…</div>
+    </div>
+  </div>
+
+  <hr class="section-sep">
+
+  <!-- ERD -->
+  <div id="erd-section">
+    <h3>Schema Diagram (ERD)</h3>
+    <div class="erd-wrap" id="erd-wrap"></div>
+  </div>
+
+  <hr class="section-sep">
+
+  <!-- Actions -->
+  <div class="download-row">
+    <button type="button" class="btn btn-secondary" id="btn-dl-db">⬇ Download migration.db</button>
+    <button type="button" class="btn btn-secondary" id="btn-dl-report">⬇ Download Report (JSON)</button>
+  </div>
+  <div class="actions done-actions">
+    <button type="button" class="btn btn-ghost"   id="btn-edit-mappings">✏ Edit Mappings</button>
+    <button type="button" class="btn btn-primary" id="btn-new-data">New Migration →</button>
+  </div>
+</div>
+
+<script>
+// ── App state ────────────────────────────────────────────────────────────────
+const S = {
+  sessionId: null,
+  files: [],           // {file, type}
+  mappings: [],        // MappingItem[]
+  targetTables: [],    // TableSchema[]
+  filesByName: {},     // filename → [col, ...]
+  currentTableIdx: 0,
+  sseSource: null,
+  migrationStarted: false,  // guard: once migration begins, mapping_ready must not navigate away
+};
+
+// ── Panels & steps ───────────────────────────────────────────────────────────
+const panels = {
+  upload:    document.getElementById('panel-upload'),
+  profiling: document.getElementById('panel-profiling'),
+  review:    document.getElementById('panel-review'),
+  done:      document.getElementById('panel-done'),
+};
+const steps = [1,2,3,4].map(i => document.getElementById('step-' + i));
+
+function showPanel(name, idx) {
+  Object.values(panels).forEach(p => p.classList.add('hidden'));
+  panels[name].classList.remove('hidden');
+  steps.forEach((s, i) => {
+    s.classList.remove('active', 'done');
+    if (i < idx) s.classList.add('done');
+    else if (i === idx) s.classList.add('active');
+  });
+}
+
+// ── File upload panel ────────────────────────────────────────────────────────
+const dropzone   = document.getElementById('dropzone');
+const fileInput  = document.getElementById('file-input');
+const fileList   = document.getElementById('file-list');
+const btnStart   = document.getElementById('btn-start');
+const uploadErr  = document.getElementById('upload-error');
+
+dropzone.addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') fileInput.click(); });
+dropzone.addEventListener('dragover',  e => { e.preventDefault(); dropzone.classList.add('dragover'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+dropzone.addEventListener('drop', e => {
+  e.preventDefault(); dropzone.classList.remove('dragover');
+  addFiles([...e.dataTransfer.files]);
+});
+fileInput.addEventListener('change', () => { addFiles([...fileInput.files]); fileInput.value = ''; });
+
+function addFiles(incoming) {
+  incoming.forEach(f => {
+    const ext = f.name.split('.').pop().toLowerCase();
+    if (!['csv','json','sql'].includes(ext)) return;
+    if (!S.files.some(x => x.file.name === f.name))
+      S.files.push({ file: f, type: ext === 'sql' ? 'ddl' : 'data' });
+  });
+  renderFileList();
+}
+
+function renderFileList() {
+  fileList.innerHTML = '';
+  uploadErr.classList.add('hidden');
+  S.files.forEach((item, idx) => {
+    const div = el('div', 'file-item');
+    const name = el('span', 'name'); name.textContent = item.file.name;
+    const badge = el('span', 'badge ' + (item.type === 'ddl' ? 'badge-ddl' : 'badge-data'));
+    badge.textContent = item.type === 'ddl' ? 'DDL' : 'DATA';
+    const rm = el('button', 'btn-remove'); rm.textContent = '×'; rm.title = 'Remove';
+    rm.addEventListener('click', () => { S.files.splice(idx, 1); renderFileList(); });
+    div.append(name, badge, rm);
+    fileList.appendChild(div);
+  });
+  const ddls  = S.files.filter(f => f.type === 'ddl').length;
+  const datas = S.files.filter(f => f.type === 'data').length;
+  btnStart.disabled = !(ddls === 1 && datas >= 1);
+}
+
+// ── Start pipeline ───────────────────────────────────────────────────────────
+btnStart.addEventListener('click', async () => {
+  btnStart.disabled = true; btnStart.textContent = 'Starting…';
+  uploadErr.classList.add('hidden');
+  try {
+    const { session_id } = await api('POST', '/sessions');
+    S.sessionId = session_id;
+    const form = new FormData();
+    S.files.forEach(item => form.append('files', item.file));
+    await fetch(`/sessions/${S.sessionId}/upload`, { method:'POST', body: form });
+    await api('POST', `/sessions/${S.sessionId}/start`);
+    showPanel('profiling', 1);
+    startSSE();
+  } catch (err) {
+    showErr(uploadErr, 'Failed to start: ' + err.message);
+    btnStart.disabled = false; btnStart.textContent = 'Start Profiling →';
+  }
+});
+
+// ── SSE ──────────────────────────────────────────────────────────────────────
+const profilingLog = document.getElementById('profiling-log');
+
+function startSSE() {
+  S.sseSource && S.sseSource.close();
+  S.sseSource = new EventSource(`/sessions/${S.sessionId}/events`);
+  S.sseSource.onmessage = e => handleEvent(JSON.parse(e.data));
+  S.sseSource.onerror = () => S.sseSource.close();
+}
+
+function handleEvent(ev) {
+  switch (ev.type) {
+
+    case 'profiling_progress': {
+      const { file, columns } = ev.payload;
+      upsertLog(profilingLog, 'plog-' + esc(file), '✅',
+                `${file} — profiled (${columns} columns)`);
+      break;
+    }
+    case 'ddl_parsed': {
+      const tableList = ev.payload.tables.map(t => `"${t.name}" (${t.columns} cols)`).join(', ');
+      upsertLog(profilingLog, 'plog-ddl', '✅', `DDL parsed → ${tableList}`);
+      upsertLog(profilingLog, 'plog-infer', '', 'Inferring mappings…', true);
+      break;
+    }
+    case 'mapping_ready': {
+      const el = document.getElementById('plog-infer');
+      if (el) { el.querySelector('.log-icon').textContent = '✅';
+                el.querySelector('.log-text').textContent = 'Mappings inferred';
+                el.querySelector('.spinner')?.remove(); }
+      S.mappings = ev.payload.mappings;
+      // Only navigate to review if migration hasn't started yet.
+      // After confirm is clicked S.migrationStarted=true so stale mapping_ready
+      // events (if any) cannot force the app back to the review panel.
+      if (!S.migrationStarted) {
+        loadSchemaAndShowReview();
+      }
+      break;
+    }
+    case 'migration_progress': {
+      const { table, file, rows, skipped, error } = ev.payload;
+      const icon = error ? '❌' : '✅';
+      const text = error   ? `[${table}] ${file} — error: ${error}`
+                 : skipped ? `[${table}] ${file} — skipped`
+                           : `[${table}] ${file} — ${rows.toLocaleString()} rows`;
+      upsertLog(document.getElementById('migration-log'), 'mlog-' + esc(table+file), icon, text);
+      break;
+    }
+    case 'done': {
+      S.sseSource && S.sseSource.close();
+      showMigrationDone(ev.payload.total_rows);
+      break;
+    }
+    case 'error': {
+      showErr(document.getElementById('profiling-error'), ev.payload.message);
+      break;
+    }
+    case 'stream_end':
+      S.sseSource && S.sseSource.close();
+      break;
+  }
+}
+
+function upsertLog(container, id, icon, text, spinner = false) {
+  let div = document.getElementById(id);
+  if (!div) {
+    div = el('div', 'log-item'); div.id = id;
+    const ic = el('span', 'log-icon');
+    const tx = el('span', 'log-text');
+    div.append(ic, tx);
+    container.appendChild(div);
+  }
+  div.querySelector('.log-icon').textContent = icon;
+  div.querySelector('.log-text').textContent = text;
+  div.querySelector('.spinner')?.remove();
+  if (spinner) { const sp = el('span', 'spinner'); div.insertBefore(sp, div.querySelector('.log-text')); }
+}
+
+// ── Review panel ─────────────────────────────────────────────────────────────
+async function loadSchemaAndShowReview() {
+  const { mappings } = await api('GET', `/sessions/${S.sessionId}/mappings`);
+  const { tables }   = await api('GET', `/sessions/${S.sessionId}/schema`);
+  S.mappings     = mappings;
+  S.targetTables = tables;
+  S.currentTableIdx = 0;
+
+  // Build filesByName from mappings
+  S.filesByName = {};
+  S.files.filter(f => f.type === 'data').forEach(f => {
+    if (!S.filesByName[f.file.name]) S.filesByName[f.file.name] = [];
+  });
+  S.mappings.forEach(m => {
+    if (m.source_file && m.source_column) {
+      if (!S.filesByName[m.source_file]) S.filesByName[m.source_file] = [];
+      if (!S.filesByName[m.source_file].includes(m.source_column))
+        S.filesByName[m.source_file].push(m.source_column);
+    }
+  });
+
+  renderERD(S.targetTables, 'erd-wrap-review');
+  renderERD(S.targetTables, 'erd-wrap');
+  renderTablePage();
+  showPanel('review', 2);
+}
+
+function renderTablePage() {
+  const tables = S.targetTables;
+  const idx    = S.currentTableIdx;
+  const table  = tables[idx];
+
+  document.getElementById('table-nav-label').textContent = `Table: ${table.name}`;
+  document.getElementById('table-nav-sub').textContent   =
+    `${idx + 1} of ${tables.length} — ${table.columns.length} target columns`;
+
+  document.getElementById('btn-prev-table').disabled = idx === 0;
+  document.getElementById('btn-next-table').disabled = idx === tables.length - 1;
+
+  // Column chips
+  const chips = document.getElementById('col-chips');
+  chips.innerHTML = '';
+  table.columns.forEach(col => {
+    const isFk = table.foreign_keys.some(fk => fk.column === col.name);
+    const cls  = col.primary_key ? 'col-chip pk'
+               : isFk            ? 'col-chip fk'
+               : !col.nullable   ? 'col-chip req'
+               : 'col-chip';
+    const tag  = col.primary_key ? '🔑 PK'
+               : isFk            ? '🔗 FK'
+               : !col.nullable   ? '* required'
+               : '';
+    const c = el('span', cls);
+    c.textContent = `${col.name} ${tag}`;
+    chips.appendChild(c);
+  });
+
+  // Mapping rows for this table only
+  const tableMappings = S.mappings.filter(m => m.target_table === table.name);
+  const tbody = document.getElementById('mapping-tbody');
+  tbody.innerHTML = '';
+  tableMappings.forEach(m => renderMappingRow(tbody, m, table));
+  updateConfirmButton();
+}
+
+function renderMappingRow(tbody, m, table) {
+  const isFk  = table.foreign_keys.some(fk => fk.column === m.target_column);
+  const isPk  = table.columns.find(c => c.name === m.target_column)?.primary_key;
+  const colInfo = table.columns.find(c => c.name === m.target_column);
+
+  const tr = document.createElement('tr');
+
+  // Target column
+  const tdTarget = el('td', '');
+  const nameSpan = document.createElement('strong');
+  nameSpan.textContent = m.target_column;
+  tdTarget.appendChild(nameSpan);
+  if (isPk)       tdTarget.appendChild(chip('PK', '#f59e0b', 'rgba(245,158,11,.15)'));
+  if (isFk)       tdTarget.appendChild(chip('FK', '#6c63ff', 'rgba(108,99,255,.15)'));
+  if (!colInfo?.nullable && !isPk) tdTarget.appendChild(chip('*', '#ef4444', 'rgba(239,68,68,.1)'));
+  tr.appendChild(tdTarget);
+
+  // SQL type
+  const tdType = el('td', ''); tdType.style.color = 'var(--muted)';
+  tdType.textContent = colInfo?.sql_type || '';
+  tr.appendChild(tdType);
+
+  // Source file select
+  const tdFile = el('td', '');
+  const fileSelect = makeSelect(['', ...Object.keys(S.filesByName)], m.source_file || '', k => k || '— skip —');
+  tdFile.appendChild(fileSelect);
+  tr.appendChild(tdFile);
+
+  // Source column select
+  const tdCol = el('td', '');
+  const colSelect = makeColumnSelect(m);
+  tdCol.appendChild(colSelect);
+  tr.appendChild(tdCol);
+
+  // Confidence
+  const tdConf = el('td', '');
+  tdConf.appendChild(makeConfBar(m.confidence));
+  tr.appendChild(tdConf);
+
+  // Reason
+  const tdReason = el('td', ''); tdReason.style.color = 'var(--muted)';
+  tdReason.textContent = m.reason || '—';
+  tr.appendChild(tdReason);
+
+  tbody.appendChild(tr);
+
+  // Wire events
+  fileSelect.addEventListener('change', async () => {
+    const newFile = fileSelect.value;
+    // Rebuild column select
+    colSelect.innerHTML = '';
+    addOpt(colSelect, '', '— skip —');
+    (S.filesByName[newFile] || []).forEach(c => addOpt(colSelect, c, c));
+    await patchMapping(m.id, { source_file: newFile || null, source_column: null });
+    patchLocal(m.id, { source_file: newFile || null, source_column: null });
+    updateConfirmButton();
+  });
+
+  colSelect.addEventListener('change', async () => {
+    const newCol = colSelect.value || null;
+    await patchMapping(m.id, { source_file: fileSelect.value || null, source_column: newCol });
+    patchLocal(m.id, { source_column: newCol });
+    updateConfirmButton();
+  });
+}
+
+function makeColumnSelect(m) {
+  const sel = makeSelect(
+    ['', ...(S.filesByName[m.source_file] || [])],
+    m.source_column || '',
+    k => k || '— skip —'
+  );
+  // If inferred column isn't in list yet, add it
+  if (m.source_column && ![...sel.options].some(o => o.value === m.source_column))
+    addOpt(sel, m.source_column, m.source_column, true);
+  return sel;
+}
+
+function makeSelect(options, selected, labelFn) {
+  const sel = document.createElement('select');
+  sel.className = 'inline-select';
+  options.forEach(v => addOpt(sel, v, labelFn(v), v === selected));
+  return sel;
+}
+
+function addOpt(sel, value, text, selected = false) {
+  const o = document.createElement('option');
+  o.value = value; o.textContent = text; o.selected = selected;
+  sel.appendChild(o);
+}
+
+function makeConfBar(conf) {
+  const pct = Math.round(conf * 100);
+  const cls = conf >= .9 ? 'conf-high' : conf >= .7 ? 'conf-mid' : 'conf-low';
+  const wrap  = el('div', 'conf-wrap');
+  const bar   = el('div', 'conf-bar');
+  const fill  = el('div', 'conf-fill ' + cls); fill.style.width = pct + '%';
+  const label = el('span', 'conf-pct'); label.textContent = pct + '%';
+  bar.appendChild(fill); wrap.append(bar, label);
+  return wrap;
+}
+
+function chip(label, color, bg) {
+  const s = document.createElement('span');
+  s.style.cssText = `display:inline-block;font-size:10px;font-weight:700;padding:1px 5px;
+    border-radius:4px;margin-left:5px;color:${color};background:${bg}`;
+  s.textContent = label;
+  return s;
+}
+
+function updateConfirmButton() {
+  // PKs cannot be null — they need a source just like NOT NULL columns.
+  // Only truly nullable (non-PK, no NOT NULL constraint) columns may be skipped.
+  const allMissing = S.targetTables.some(table =>
+    table.columns.some(col => {
+      if (col.nullable && !col.primary_key) return false; // optional → skip check
+      const m = S.mappings.find(x => x.target_table === table.name && x.target_column === col.name);
+      return !m || !m.source_column;
+    })
+  );
+  document.getElementById('btn-confirm').disabled = allMissing;
+}
+
+function patchLocal(id, patch) {
+  const idx = S.mappings.findIndex(m => m.id === id);
+  if (idx !== -1) Object.assign(S.mappings[idx], patch);
+}
+
+async function patchMapping(id, patch) {
+  await fetch(`/sessions/${S.sessionId}/mappings/${id}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  }).catch(() => {});
+}
+
+// Table navigation
+document.getElementById('btn-prev-table').addEventListener('click', () => {
+  if (S.currentTableIdx > 0) { S.currentTableIdx--; renderTablePage(); }
+});
+document.getElementById('btn-next-table').addEventListener('click', () => {
+  if (S.currentTableIdx < S.targetTables.length - 1) { S.currentTableIdx++; renderTablePage(); }
+});
+
+// ── Confirm ───────────────────────────────────────────────────────────────────
+document.getElementById('btn-confirm').addEventListener('click', async () => {
+  document.getElementById('btn-confirm').disabled = true;
+  S.migrationStarted = true;
+
+  // Close existing SSE before navigating to done panel
+  S.sseSource && S.sseSource.close(); S.sseSource = null;
+
+  showPanel('done', 3);
+  document.getElementById('migration-live').classList.remove('hidden');
+  document.getElementById('migration-summary').classList.add('hidden');
+  document.getElementById('migration-log').innerHTML = '';
+  document.getElementById('validation-grid').innerHTML =
+    '<div class="val-placeholder">Running validation…</div>';
+  document.getElementById('erd-wrap').innerHTML = '';
+
+  // POST first — server creates a fresh SSE queue before returning.
+  // Then open EventSource so it binds to the fresh queue with zero old events.
+  await fetch(`/sessions/${S.sessionId}/confirm`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mappings: S.mappings }),
+  });
+  startSSE();
+});
+
+// ── Migration done ────────────────────────────────────────────────────────────
+async function showMigrationDone(totalRows) {
+  document.getElementById('migration-live').classList.add('hidden');
+
+  // Summary table
+  const result = await api('GET', `/sessions/${S.sessionId}/result`);
+  const tbody  = document.getElementById('summary-tbody');
+  tbody.innerHTML = '';
+  Object.entries(result.rows_loaded || {}).forEach(([table, files]) => {
+    Object.entries(files).forEach(([file, rows]) => {
+      const tr = document.createElement('tr');
+      [table, file, rows.toLocaleString()].forEach((v, i) => {
+        const td = document.createElement('td');
+        td.textContent = v;
+        if (i === 2) td.style.fontWeight = '600';
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+  });
+  document.getElementById('total-rows').textContent =
+    totalRows.toLocaleString() + ' total rows migrated';
+  document.getElementById('migration-summary').classList.remove('hidden');
+
+  // Always render the ERD into the done panel with the latest schema.
+  // Fetch schema from server if S.targetTables is empty (edge case).
+  if (!S.targetTables || S.targetTables.length === 0) {
+    try {
+      const { tables } = await api('GET', `/sessions/${S.sessionId}/schema`);
+      S.targetTables = tables;
+    } catch (_) {}
+  }
+  renderERD(S.targetTables, 'erd-wrap');
+
+  runValidation();
+}
+
+async function runValidation() {
+  const grid = document.getElementById('validation-grid');
+  try {
+    const { validation } = await api('GET', `/sessions/${S.sessionId}/validate`);
+    renderValidation(validation);
+  } catch (e) {
+    grid.innerHTML = `<div class="error-banner">Validation failed: ${e.message}</div>`;
+  }
+}
+
+function renderValidation(results) {
+  const grid = document.getElementById('validation-grid');
+  grid.innerHTML = '';
+  results.forEach(r => {
+    const card = el('div', `val-card ${r.status}`);
+    const nm   = el('div', 'val-table-name'); nm.textContent = r.table;
+    const rows = valRow('Rows loaded', r.row_count.toLocaleString());
+    const fkv  = valRow('FK violations', r.fk_violations === 0 ? '✅ None' : `⚠ ${r.fk_violations}`);
+    const nv   = valRow('NOT NULL violations', r.null_violations === 0 ? '✅ None' : `⚠ ${r.null_violations}`);
+    const badge = el('span', `val-badge ${r.status}`);
+    badge.textContent = r.status.toUpperCase();
+    card.append(nm, rows, fkv, nv, badge);
+    grid.appendChild(card);
+  });
+}
+
+function valRow(label, value) {
+  const d = el('div', 'val-row');
+  const l = document.createElement('span'); l.textContent = label;
+  const v = document.createElement('span'); v.textContent = value;
+  d.append(l, v); return d;
+}
+
+// ── ERD ───────────────────────────────────────────────────────────────────────
+function renderERD(tables, wrapId) {
+  wrapId = wrapId || 'erd-wrap';
+  const wrap = document.getElementById(wrapId);
+  if (!wrap) return;
+  if (!tables || tables.length === 0) {
+    wrap.innerHTML = '<p class="val-placeholder">No schema loaded.</p>'; return;
+  }
+
+  const TW = 240, ROW_H = 24, HEAD_H = 36, PAD = 60;
+  const COLS = Math.min(tables.length, 3);
+
+  // Grid positions
+  const pos = {};
+  tables.forEach((t, i) => {
+    const col = i % COLS, row = Math.floor(i / COLS);
+    pos[t.name] = { x: col * (TW + PAD) + PAD, y: 0, row, col,
+                    h: HEAD_H + t.columns.length * ROW_H };
+  });
+
+  // Row y-offsets
+  const rowH = {};
+  Object.values(pos).forEach(p => { rowH[p.row] = Math.max(rowH[p.row] || 0, p.h); });
+  // Extra top margin so above-routed FK arrows are not clipped
+  const hasSpanningFk = tables.some(t =>
+    (t.foreign_keys || []).some(fk => {
+      const sc = pos[t.name]?.col, dc = pos[fk.ref_table]?.col;
+      return sc !== undefined && dc !== undefined && Math.abs(sc - dc) > 1;
+    })
+  );
+  const topPad = hasSpanningFk ? PAD + 40 : PAD;
+  let cumY = topPad;
+  const rowY = {};
+  Object.keys(rowH).sort((a, b) => +a - +b).forEach(r => { rowY[r] = cumY; cumY += rowH[r] + PAD; });
+  Object.values(pos).forEach(p => { p.y = rowY[p.row]; });
+
+  const svgW = COLS * (TW + PAD) + PAD;
+  const svgH = cumY;
+
+  // Hardcoded colors — CSS vars don't work inside SVG fill attributes
+  const C = { surface:'#22263a', border:'#2e3147', accent:'#6c63ff',
+              text:'#e2e4f0', muted:'#7b7fa6', amber:'#f59e0b' };
+
+  // Unique marker ID per wrap to avoid conflicts when two ERDs are in the DOM
+  const markerId = 'erd-arr-' + wrapId;
+  const defs = `<defs>
+    <marker id="${markerId}" markerWidth="10" markerHeight="8" refX="10" refY="4" orient="auto">
+      <polygon points="0 0,10 4,0 8" fill="${C.accent}"/>
+    </marker>
+  </defs>`;
+
+  let arrows = '', boxes = '';
+
+  // ── Draw FK relationship arrows FIRST (rendered under table boxes) ──────────
+  tables.forEach(t => {
+    (t.foreign_keys || []).forEach(fk => {
+      const src = pos[t.name], dst = pos[fk.ref_table];
+      if (!src || !dst) return;
+
+      const fkIdx = t.columns.findIndex(c => c.name === fk.column);
+      if (fkIdx < 0) return;
+      const refTbl = tables.find(tt => tt.name === fk.ref_table);
+      const refIdx = refTbl ? Math.max(refTbl.columns.findIndex(c => c.name === fk.ref_column), 0) : 0;
+
+      const sy = src.y + HEAD_H + fkIdx  * ROW_H + ROW_H / 2;
+      const dy = dst.y + HEAD_H + refIdx * ROW_H + ROW_H / 2;
+
+      let sx, dx, path;
+
+      if (src.col === dst.col) {
+        // Same column: route via the right outer edge
+        const outerX = src.x + TW + 36;
+        sx = src.x + TW; dx = dst.x + TW;
+        path = `M${sx},${sy} Q${outerX},${sy} ${outerX},${(sy + dy) / 2} Q${outerX},${dy} ${dx},${dy}`;
+      } else if (dst.x > src.x) {
+        // Dest is to the RIGHT → right edge → left edge
+        sx = src.x + TW; dx = dst.x;
+        const gap = Math.max(dx - sx, 10);
+        path = `M${sx},${sy} C${sx + gap * 0.45},${sy} ${dx - gap * 0.45},${dy} ${dx},${dy}`;
+      } else {
+        // Dest is to the LEFT → left edge → right edge
+        sx = src.x; dx = dst.x + TW;
+        const gap = Math.max(sx - dx, 10);
+        if (Math.abs(src.col - dst.col) === 1) {
+          // Adjacent tables: simple bezier through the gap
+          path = `M${sx},${sy} C${sx - gap * 0.45},${sy} ${dx + gap * 0.45},${dy} ${dx},${dy}`;
+        } else {
+          // Spanning one or more tables: route above all tables to stay visible
+          const overY = Math.min(src.y, dst.y) - 28;
+          path = `M${sx},${sy} L${sx},${overY + 12} Q${sx},${overY} ${sx - 12},${overY}` +
+                 ` L${dx + 12},${overY} Q${dx},${overY} ${dx},${overY + 12} L${dx},${dy}`;
+        }
+      }
+
+      arrows += `<path d="${path}" fill="none" stroke="${C.accent}"
+        stroke-width="1.5" stroke-dasharray="5,3"
+        marker-end="url(#${markerId})"/>`;
+    });
+  });
+
+  // ── Draw table boxes ON TOP of arrows ──────────────────────────────────────
+  tables.forEach(t => {
+    const p = pos[t.name];
+    const fkCols = new Set((t.foreign_keys || []).map(fk => fk.column));
+
+    // Outer box + header band
+    boxes += `
+      <rect x="${p.x}" y="${p.y}" width="${TW}" height="${p.h}" rx="6"
+        fill="${C.surface}" stroke="${C.border}" stroke-width="1.5"/>
+      <rect x="${p.x}" y="${p.y}" width="${TW}" height="${HEAD_H}" rx="6"
+        fill="${C.accent}" fill-opacity="0.28" stroke="none"/>
+      <rect x="${p.x}" y="${p.y + HEAD_H - 6}" width="${TW}" height="6"
+        fill="${C.accent}" fill-opacity="0.15"/>
+      <text x="${p.x + TW / 2}" y="${p.y + HEAD_H - 10}"
+        text-anchor="middle" fill="${C.text}" font-size="13" font-weight="700"
+        font-family="Inter,system-ui,sans-serif">${escXml(t.name)}</text>`;
+
+    t.columns.forEach((col, i) => {
+      const cy    = p.y + HEAD_H + i * ROW_H;
+      const isPk  = col.primary_key;
+      const isFk  = fkCols.has(col.name);
+      const color = isPk ? C.amber : isFk ? C.accent : C.text;
+      const tag   = isPk ? 'PK' : isFk ? 'FK' : '';
+      const textY = cy + ROW_H - 8;
+
+      // Row separator
+      boxes += `<line x1="${p.x}" y1="${cy}" x2="${p.x + TW}" y2="${cy}"
+        stroke="${C.border}" stroke-width="0.5"/>`;
+
+      // Column name
+      boxes += `<text x="${p.x + 10}" y="${textY}" fill="${color}" font-size="12"
+        font-family="Inter,system-ui,sans-serif">${escXml(col.name)}</text>`;
+
+      // PK/FK badge inline after the name (no coordinate collision with sql_type)
+      if (tag) {
+        const nameW = Math.min(col.name.length * 7 + 10, TW - 90);
+        const bW    = tag.length * 6 + 8;
+        boxes += `<rect x="${p.x + nameW}" y="${cy + 6}" width="${bW}" height="12" rx="3"
+          fill="${color}" fill-opacity="0.2" stroke="${color}" stroke-width="0.5"/>
+        <text x="${p.x + nameW + 4}" y="${textY}" fill="${color}" font-size="9" font-weight="700"
+          font-family="Inter,system-ui,sans-serif">${tag}</text>`;
+      }
+
+      // SQL type right-aligned (no longer overlaps badge)
+      boxes += `<text x="${p.x + TW - 8}" y="${textY}" text-anchor="end" fill="${C.muted}"
+        font-size="10" font-family="Inter,system-ui,sans-serif">${escXml(col.sql_type || '')}</text>`;
+    });
+  });
+
+  wrap.innerHTML = `<svg class="erd-svg" width="${svgW}" height="${svgH}"
+    viewBox="0 0 ${svgW} ${svgH}" xmlns="http://www.w3.org/2000/svg">
+    ${defs}${arrows}${boxes}
+  </svg>`;
+}
+
+// ── Back / Edit / New ─────────────────────────────────────────────────────────
+document.getElementById('btn-back').addEventListener('click', async () => {
+  if (S.sessionId) await fetch(`/sessions/${S.sessionId}/reset`, { method:'POST' }).catch(() => {});
+  resetApp();
+});
+
+document.getElementById('btn-edit-mappings').addEventListener('click', () => {
+  // Go back to review panel with existing mappings
+  document.getElementById('migration-live').classList.add('hidden');
+  document.getElementById('migration-summary').classList.add('hidden');
+  showPanel('review', 2);
+  renderTablePage();
+  // Wire confirm to remigrate endpoint
+  const btn = document.getElementById('btn-confirm');
+  btn.textContent = 'Re-migrate →';
+  btn.onclick = remigrate;
+  updateConfirmButton();
+});
+
+async function remigrate() {
+  document.getElementById('btn-confirm').disabled = true;
+  S.migrationStarted = true;
+
+  S.sseSource && S.sseSource.close(); S.sseSource = null;
+
+  showPanel('done', 3);
+  document.getElementById('migration-live').classList.remove('hidden');
+  document.getElementById('migration-summary').classList.add('hidden');
+  document.getElementById('migration-log').innerHTML = '';
+  document.getElementById('validation-grid').innerHTML =
+    '<div class="val-placeholder">Running validation…</div>';
+  document.getElementById('erd-wrap').innerHTML = '';
+
+  await fetch(`/sessions/${S.sessionId}/remigrate`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mappings: S.mappings }),
+  });
+  startSSE();
+}
+
+document.getElementById('btn-new-data').addEventListener('click', async () => {
+  if (S.sessionId) await fetch(`/sessions/${S.sessionId}/reset`, { method:'POST' }).catch(() => {});
+  resetApp();
+});
+
+// ── Downloads ─────────────────────────────────────────────────────────────────
+document.getElementById('btn-dl-db').addEventListener('click', () => {
+  dlFile(`/sessions/${S.sessionId}/download/db`, 'migration.db');
+});
+document.getElementById('btn-dl-report').addEventListener('click', () => {
+  dlFile(`/sessions/${S.sessionId}/download/report`, 'migration_report.json');
+});
+
+function dlFile(url, filename) {
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+}
+
+// ── Reset ─────────────────────────────────────────────────────────────────────
+function resetApp() {
+  S.sessionId = null; S.files = []; S.mappings = [];
+  S.targetTables = []; S.filesByName = {}; S.currentTableIdx = 0;
+  S.migrationStarted = false;
+  S.sseSource && S.sseSource.close(); S.sseSource = null;
+
+  fileList.innerHTML = '';
+  document.getElementById('profiling-log').innerHTML    = '';
+  document.getElementById('migration-log').innerHTML    = '';
+  document.getElementById('mapping-tbody').innerHTML    = '';
+  document.getElementById('summary-tbody').innerHTML    = '';
+  document.getElementById('validation-grid').innerHTML  = '';
+  document.getElementById('erd-wrap').innerHTML         = '';
+  document.getElementById('erd-wrap-review').innerHTML  = '';
+  document.getElementById('total-rows').textContent     = '';
+  uploadErr.classList.add('hidden');
+
+  // Reset confirm button
+  const btn = document.getElementById('btn-confirm');
+  btn.textContent = 'Confirm & Migrate →';
+  btn.onclick = null;
+  btn.disabled = true;
+  btnStart.disabled = true; btnStart.textContent = 'Start Profiling →';
+
+  document.getElementById('migration-live').classList.add('hidden');
+  document.getElementById('migration-summary').classList.add('hidden');
+
+  showPanel('upload', 0);
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function el(tag, cls) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  return e;
+}
+
+function esc(s) { return CSS.escape(String(s)); }
+
+function escXml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function showErr(el, msg) { el.textContent = msg; el.classList.remove('hidden'); }
+
+async function api(method, url, body) {
+  const opts = { method, headers: {} };
+  if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+  const res = await fetch(url, opts);
+  if (!res.ok) throw new Error(`${method} ${url} → ${res.status}`);
+  return res.json();
+}
+
+// Init
+showPanel('upload', 0);
+</script>
+</body>
+</html>
