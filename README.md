@@ -33,7 +33,7 @@ The pipeline is built with **LangGraph** and pauses before the migration step so
 ### 1. Clone and create the environment
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/whatiskeptiname/DBMapper.git
 cd DBMapper
 
 # Using uv (recommended)
