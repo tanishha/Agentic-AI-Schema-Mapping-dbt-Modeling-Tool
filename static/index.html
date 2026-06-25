@@ -190,6 +190,24 @@ header p  { color: var(--muted); font-size: 13px; margin-top: 4px; }
 .col-chip.fk  { border-color: var(--accent); color: var(--accent); }
 .col-chip.req { border-color: var(--red); color: var(--red); }
 
+.table-select-box {
+  margin-top: 18px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+.table-select-list { display: grid; gap: 8px; margin-top: 10px; }
+.table-choice {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.table-choice input { accent-color: var(--accent); }
+.table-choice small { color: var(--muted); margin-left: auto; }
+
 /* Mapping table */
 .mapping-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -254,6 +272,9 @@ select.inline-select:focus { outline: none; border-color: var(--accent); }
 .summary-table th { color: var(--muted); font-weight: 500; }
 .summary-table tr:last-child td { border-bottom: none; }
 .summary-total { font-size: 18px; font-weight: 700; color: var(--green); margin-top: 12px; }
+.summary-table tr.row-error td { color: var(--red); }
+.summary-table tr.row-error td:last-child { color: var(--red); }
+.summary-table tr.row-skipped td { color: var(--amber); }
 
 /* Download row */
 .download-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
@@ -306,6 +327,13 @@ select.inline-select:focus { outline: none; border-color: var(--accent); }
 <div class="card hidden" id="panel-profiling">
   <h2>Pipeline Progress</h2>
   <div class="progress-log" id="profiling-log"></div>
+  <div class="table-select-box hidden" id="table-select-box">
+    <h3>Select Target Tables</h3>
+    <div class="table-select-list" id="table-select-list"></div>
+    <div class="actions">
+      <button type="button" class="btn btn-primary" id="btn-select-tables">Infer Mappings →</button>
+    </div>
+  </div>
   <div id="profiling-error" class="error-banner hidden"></div>
 </div>
 
@@ -369,7 +397,7 @@ select.inline-select:focus { outline: none; border-color: var(--accent); }
   <div id="migration-summary" class="hidden">
     <h3>Rows Loaded</h3>
     <table class="summary-table" id="summary-table">
-      <thead><tr><th>Table</th><th>File</th><th>Rows</th></tr></thead>
+      <thead><tr><th>Table</th><th>File</th><th>Rows</th><th>Status</th><th>Reason</th></tr></thead>
       <tbody id="summary-tbody"></tbody>
     </table>
     <div class="summary-total" id="total-rows"></div>
@@ -412,7 +440,10 @@ const S = {
   sessionId: null,
   files: [],           // {file, type}
   mappings: [],        // MappingItem[]
-  targetTables: [],    // TableSchema[]
+  targetTables: [],    // selected TableSchema[]
+  allTargetTables: [], // all parsed TableSchema[]
+  selectedTables: [],  // table names selected for population
+  sourceCatalog: [],   // profiler output, one entry per source column
   filesByName: {},     // filename → [col, ...]
   currentTableIdx: 0,
   sseSource: null,
@@ -524,7 +555,7 @@ function handleEvent(ev) {
     case 'ddl_parsed': {
       const tableList = ev.payload.tables.map(t => `"${t.name}" (${t.columns} cols)`).join(', ');
       upsertLog(profilingLog, 'plog-ddl', '✅', `DDL parsed → ${tableList}`);
-      upsertLog(profilingLog, 'plog-infer', '', 'Inferring mappings…', true);
+      loadSchemaAndShowTableSelection();
       break;
     }
     case 'mapping_ready': {
@@ -532,7 +563,7 @@ function handleEvent(ev) {
       if (el) { el.querySelector('.log-icon').textContent = '✅';
                 el.querySelector('.log-text').textContent = 'Mappings inferred';
                 el.querySelector('.spinner')?.remove(); }
-      S.mappings = ev.payload.mappings;
+      S.mappings = ev.payload.mappings.map(normalizeMapping);
       // Only navigate to review if migration hasn't started yet.
       // After confirm is clicked S.migrationStarted=true so stale mapping_ready
       // events (if any) cannot force the app back to the review panel.
@@ -542,10 +573,10 @@ function handleEvent(ev) {
       break;
     }
     case 'migration_progress': {
-      const { table, file, rows, skipped, error } = ev.payload;
+      const { table, file, rows, skipped, error, reason } = ev.payload;
       const icon = error ? '❌' : '✅';
       const text = error   ? `[${table}] ${file} — error: ${error}`
-                 : skipped ? `[${table}] ${file} — skipped`
+                 : skipped ? `[${table}] ${file} — skipped: ${reason || 'no rows'}`
                            : `[${table}] ${file} — ${rows.toLocaleString()} rows`;
       upsertLog(document.getElementById('migration-log'), 'mlog-' + esc(table+file), icon, text);
       break;
@@ -581,28 +612,86 @@ function upsertLog(container, id, icon, text, spinner = false) {
 }
 
 // ── Review panel ─────────────────────────────────────────────────────────────
+function normalizeMapping(mapping) {
+  const normalized = { ...mapping };
+  ['source_file', 'source_column', 'transformation'].forEach(key => {
+    if (typeof normalized[key] === 'string') {
+      const value = normalized[key].trim().toLowerCase();
+      if (['', 'null', 'none', 'skip'].includes(value)) normalized[key] = null;
+    }
+  });
+  return normalized;
+}
+
+async function loadSchemaAndShowTableSelection() {
+  const { tables, selected_tables } = await api('GET', `/sessions/${S.sessionId}/schema`);
+  S.allTargetTables = tables;
+  S.selectedTables = selected_tables && selected_tables.length
+    ? selected_tables
+    : tables.map(t => t.name);
+  renderTableSelection();
+  document.getElementById('table-select-box').classList.remove('hidden');
+}
+
+function renderTableSelection() {
+  const list = document.getElementById('table-select-list');
+  list.innerHTML = '';
+  S.allTargetTables.forEach(table => {
+    const label = el('label', 'table-choice');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = table.name;
+    cb.checked = S.selectedTables.includes(table.name);
+    const name = document.createElement('strong');
+    name.textContent = table.name;
+    const meta = document.createElement('small');
+    meta.textContent = `${table.columns.length} columns, ${(table.foreign_keys || []).length} FKs`;
+    label.append(cb, name, meta);
+    list.appendChild(label);
+  });
+}
+
+document.getElementById('btn-select-tables').addEventListener('click', async () => {
+  const checked = [...document.querySelectorAll('#table-select-list input:checked')]
+    .map(input => input.value);
+  if (!checked.length) {
+    showErr(document.getElementById('profiling-error'), 'Select at least one target table.');
+    return;
+  }
+  S.selectedTables = checked;
+  S.targetTables = S.allTargetTables.filter(t => checked.includes(t.name));
+  document.getElementById('table-select-box').classList.add('hidden');
+  upsertLog(profilingLog, 'plog-infer', '', 'Inferring mappings…', true);
+  await api('POST', `/sessions/${S.sessionId}/select-tables`, { tables: checked });
+  startSSE();
+});
+
 async function loadSchemaAndShowReview() {
   const { mappings } = await api('GET', `/sessions/${S.sessionId}/mappings`);
-  const { tables }   = await api('GET', `/sessions/${S.sessionId}/schema`);
-  S.mappings     = mappings;
-  S.targetTables = tables;
+  const { tables, selected_tables } = await api('GET', `/sessions/${S.sessionId}/schema`);
+  const { catalog } = await api('GET', `/sessions/${S.sessionId}/catalog`);
+  S.mappings = mappings.map(normalizeMapping);
+  S.sourceCatalog = catalog || [];
+  S.allTargetTables = tables;
+  S.selectedTables = selected_tables && selected_tables.length
+    ? selected_tables
+    : tables.map(t => t.name);
+  S.targetTables = tables.filter(t => S.selectedTables.includes(t.name));
   S.currentTableIdx = 0;
 
-  // Build filesByName from mappings
+  // Build filesByName from the profiler catalog, not from LLM mappings.
   S.filesByName = {};
   S.files.filter(f => f.type === 'data').forEach(f => {
     if (!S.filesByName[f.file.name]) S.filesByName[f.file.name] = [];
   });
-  S.mappings.forEach(m => {
-    if (m.source_file && m.source_column) {
-      if (!S.filesByName[m.source_file]) S.filesByName[m.source_file] = [];
-      if (!S.filesByName[m.source_file].includes(m.source_column))
-        S.filesByName[m.source_file].push(m.source_column);
-    }
+  S.sourceCatalog.forEach(col => {
+    if (!S.filesByName[col.source_file]) S.filesByName[col.source_file] = [];
+    if (!S.filesByName[col.source_file].includes(col.column_name))
+      S.filesByName[col.source_file].push(col.column_name);
   });
 
-  renderERD(S.targetTables, 'erd-wrap-review');
-  renderERD(S.targetTables, 'erd-wrap');
+  renderERD(S.allTargetTables, 'erd-wrap-review');
+  renderERD(S.allTargetTables, 'erd-wrap');
   renderTablePage();
   showPanel('review', 2);
 }
@@ -800,6 +889,7 @@ document.getElementById('btn-confirm').addEventListener('click', async () => {
   document.getElementById('migration-live').classList.remove('hidden');
   document.getElementById('migration-summary').classList.add('hidden');
   document.getElementById('migration-log').innerHTML = '';
+  document.getElementById('validation-section').classList.remove('hidden');
   document.getElementById('validation-grid').innerHTML =
     '<div class="val-placeholder">Running validation…</div>';
   document.getElementById('erd-wrap').innerHTML = '';
@@ -821,13 +911,21 @@ async function showMigrationDone(totalRows) {
   const result = await api('GET', `/sessions/${S.sessionId}/result`);
   const tbody  = document.getElementById('summary-tbody');
   tbody.innerHTML = '';
+  let hasMigrationErrors = false;
   Object.entries(result.rows_loaded || {}).forEach(([table, files]) => {
-    Object.entries(files).forEach(([file, rows]) => {
+    Object.entries(files).forEach(([file, detail]) => {
+      const rows = typeof detail === 'object' ? detail.rows : detail;
+      const status = typeof detail === 'object' ? detail.status : '';
+      const reason = typeof detail === 'object' ? detail.reason : '';
+      if (status === 'error') hasMigrationErrors = true;
       const tr = document.createElement('tr');
-      [table, file, rows.toLocaleString()].forEach((v, i) => {
+      if (status === 'error') tr.classList.add('row-error');
+      if (status === 'skipped') tr.classList.add('row-skipped');
+      [table, file, Number(rows || 0).toLocaleString(), status, reason].forEach((v, i) => {
         const td = document.createElement('td');
         td.textContent = v;
         if (i === 2) td.style.fontWeight = '600';
+        if (i === 4 && status !== 'error') td.style.color = 'var(--muted)';
         tr.appendChild(td);
       });
       tbody.appendChild(tr);
@@ -835,19 +933,30 @@ async function showMigrationDone(totalRows) {
   });
   document.getElementById('total-rows').textContent =
     totalRows.toLocaleString() + ' total rows migrated';
+  document.getElementById('total-rows').style.color =
+    hasMigrationErrors ? 'var(--red)' : 'var(--green)';
   document.getElementById('migration-summary').classList.remove('hidden');
 
   // Always render the ERD into the done panel with the latest schema.
   // Fetch schema from server if S.targetTables is empty (edge case).
-  if (!S.targetTables || S.targetTables.length === 0) {
+  if (!S.allTargetTables || S.allTargetTables.length === 0) {
     try {
-      const { tables } = await api('GET', `/sessions/${S.sessionId}/schema`);
-      S.targetTables = tables;
+      const { tables, selected_tables } = await api('GET', `/sessions/${S.sessionId}/schema`);
+      S.allTargetTables = tables;
+      S.selectedTables = selected_tables || [];
+      S.targetTables = tables.filter(t => !S.selectedTables.length || S.selectedTables.includes(t.name));
     } catch (_) {}
   }
-  renderERD(S.targetTables, 'erd-wrap');
+  renderERD(S.allTargetTables, 'erd-wrap');
 
-  runValidation();
+  const validationSection = document.getElementById('validation-section');
+  if (hasMigrationErrors) {
+    validationSection.classList.add('hidden');
+    document.getElementById('validation-grid').innerHTML = '';
+  } else {
+    validationSection.classList.remove('hidden');
+    runValidation();
+  }
 }
 
 async function runValidation() {
@@ -892,8 +1001,8 @@ function renderERD(tables, wrapId) {
     wrap.innerHTML = '<p class="val-placeholder">No schema loaded.</p>'; return;
   }
 
-  const TW = 240, ROW_H = 24, HEAD_H = 36, PAD = 60;
-  const COLS = Math.min(tables.length, 3);
+  const TW = 270, ROW_H = 24, HEAD_H = 36, PAD = 96;
+  const COLS = Math.min(tables.length, 2);
 
   // Grid positions
   const pos = {};
@@ -923,7 +1032,7 @@ function renderERD(tables, wrapId) {
   const svgH = cumY;
 
   // Hardcoded colors — CSS vars don't work inside SVG fill attributes
-  const C = { surface:'#22263a', border:'#2e3147', accent:'#6c63ff',
+  const C = { surface:'#22263a', border:'#2e3147', accent:'#9aa3ff',
               text:'#e2e4f0', muted:'#7b7fa6', amber:'#f59e0b' };
 
   // Unique marker ID per wrap to avoid conflicts when two ERDs are in the DOM
@@ -977,9 +1086,20 @@ function renderERD(tables, wrapId) {
         }
       }
 
+      const nOnLeftEdge = sx <= src.x + 1;
+      const oneOnLeftEdge = dx <= dst.x + 1;
+      const nX = nOnLeftEdge ? sx - 8 : sx + 8;
+      const oneX = oneOnLeftEdge ? dx - 8 : dx + 8;
+      const nAnchor = nOnLeftEdge ? 'end' : 'start';
+      const oneAnchor = oneOnLeftEdge ? 'end' : 'start';
+
       arrows += `<path d="${path}" fill="none" stroke="${C.accent}"
-        stroke-width="1.5" stroke-dasharray="5,3"
+        stroke-width="2.5"
         marker-end="url(#${markerId})"/>`;
+      arrows += `<text x="${nX}" y="${sy - 7}" text-anchor="${nAnchor}" fill="${C.accent}" font-size="11"
+        font-weight="700" font-family="Inter,system-ui,sans-serif">N</text>
+        <text x="${oneX}" y="${dy - 7}" text-anchor="${oneAnchor}" fill="${C.accent}" font-size="11"
+        font-weight="700" font-family="Inter,system-ui,sans-serif">1</text>`;
     });
   });
 
@@ -1032,9 +1152,9 @@ function renderERD(tables, wrapId) {
     });
   });
 
-  wrap.innerHTML = `<svg class="erd-svg" width="${svgW}" height="${svgH}"
+  wrap.innerHTML = `<svg class="erd-svg" width="100%" height="${svgH}" style="max-width:${svgW}px"
     viewBox="0 0 ${svgW} ${svgH}" xmlns="http://www.w3.org/2000/svg">
-    ${defs}${arrows}${boxes}
+    ${defs}${boxes}${arrows}
   </svg>`;
 }
 
@@ -1067,6 +1187,7 @@ async function remigrate() {
   document.getElementById('migration-live').classList.remove('hidden');
   document.getElementById('migration-summary').classList.add('hidden');
   document.getElementById('migration-log').innerHTML = '';
+  document.getElementById('validation-section').classList.remove('hidden');
   document.getElementById('validation-grid').innerHTML =
     '<div class="val-placeholder">Running validation…</div>';
   document.getElementById('erd-wrap').innerHTML = '';
@@ -1099,7 +1220,8 @@ function dlFile(url, filename) {
 // ── Reset ─────────────────────────────────────────────────────────────────────
 function resetApp() {
   S.sessionId = null; S.files = []; S.mappings = [];
-  S.targetTables = []; S.filesByName = {}; S.currentTableIdx = 0;
+  S.targetTables = []; S.allTargetTables = []; S.selectedTables = []; S.sourceCatalog = [];
+  S.filesByName = {}; S.currentTableIdx = 0;
   S.migrationStarted = false;
   S.sseSource && S.sseSource.close(); S.sseSource = null;
 
@@ -1109,8 +1231,10 @@ function resetApp() {
   document.getElementById('mapping-tbody').innerHTML    = '';
   document.getElementById('summary-tbody').innerHTML    = '';
   document.getElementById('validation-grid').innerHTML  = '';
+  document.getElementById('validation-section').classList.remove('hidden');
   document.getElementById('erd-wrap').innerHTML         = '';
   document.getElementById('erd-wrap-review').innerHTML  = '';
+  document.getElementById('table-select-list').innerHTML = '';
   document.getElementById('total-rows').textContent     = '';
   uploadErr.classList.add('hidden');
 
@@ -1123,6 +1247,7 @@ function resetApp() {
 
   document.getElementById('migration-live').classList.add('hidden');
   document.getElementById('migration-summary').classList.add('hidden');
+  document.getElementById('table-select-box').classList.add('hidden');
 
   showPanel('upload', 0);
 }

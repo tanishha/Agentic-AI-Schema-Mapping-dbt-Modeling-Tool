@@ -3,13 +3,19 @@ import os
 import uuid
 from typing import List
 
-from openai import OpenAI
+# from openai import OpenAI
 
 from models import MappingItem, MigrationState
+from llm_client import get_llm_client, get_model_name
 
 
 def _build_prompt(state: MigrationState) -> str:
-    tables_json = json.dumps(state["target_tables"], indent=2)
+    selected = set(state.get("selected_tables", []))
+    target_tables = [
+        table for table in state["target_tables"]
+        if not selected or table["name"] in selected
+    ]
+    tables_json = json.dumps(target_tables, indent=2)
     catalog_json = json.dumps(state["intermediate_catalog"], indent=2)
     return (
         "You are a data migration assistant.\n\n"
@@ -30,14 +36,12 @@ def _build_prompt(state: MigrationState) -> str:
         "- transformation is null unless a concat or cast is needed"
     )
 
-
 def _call_llm(prompt: str) -> str:
-    client = OpenAI(
-        base_url=os.getenv("LLM_BASE_URL", "http://localhost:11434/v1"),
-        api_key=os.getenv("LLM_API_KEY", "ollama"),
-    )
+    client = get_llm_client()
+    model = get_model_name()
+    print(f"[LLM CALL] provider={os.getenv('LLM_PROVIDER', 'ollama')} model={model} base_url={client.base_url}")
     response = client.chat.completions.create(
-        model=os.getenv("LLM_MODEL", "qwen2.5:7b"),
+        model=get_model_name(),
         messages=[{"role": "user", "content": prompt}],
         temperature=0,
     )
@@ -53,19 +57,28 @@ def _parse_response(raw: str) -> List[MappingItem]:
                 text = s
                 break
     data = json.loads(text)
-    return [
-        MappingItem(
+    mappings = []
+    for row in data:
+        source_file = row.get("source_file")
+        source_column = row.get("source_column")
+        transformation = row.get("transformation")
+        if isinstance(source_file, str) and source_file.strip().lower() in {"", "null", "none", "skip"}:
+            source_file = None
+        if isinstance(source_column, str) and source_column.strip().lower() in {"", "null", "none", "skip"}:
+            source_column = None
+        if isinstance(transformation, str) and transformation.strip().lower() in {"", "null", "none"}:
+            transformation = None
+        mappings.append(MappingItem(
             id=str(uuid.uuid4()),
             target_table=row["target_table"],
             target_column=row["target_column"],
-            source_file=row.get("source_file"),
-            source_column=row.get("source_column"),
-            transformation=row.get("transformation"),
+            source_file=source_file,
+            source_column=source_column,
+            transformation=transformation,
             confidence=float(row.get("confidence", 0.0)),
             reason=row.get("reason", ""),
-        )
-        for row in data
-    ]
+        ))
+    return mappings
 
 
 def mapping_inference_agent(state: MigrationState) -> dict:

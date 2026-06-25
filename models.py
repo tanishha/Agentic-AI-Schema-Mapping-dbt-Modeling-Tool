@@ -58,6 +58,7 @@ class MigrationState(TypedDict):
     ddl_content: str
     intermediate_catalog: List[ColumnProfile]
     target_tables: List[TableSchema]
+    selected_tables: List[str]
     proposed_mappings: List[MappingItem]
     confirmed_mappings: List[MappingItem]
     rows_loaded: dict          # {table_name: {filename: row_count}}

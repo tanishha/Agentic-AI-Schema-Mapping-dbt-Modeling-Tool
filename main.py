@@ -9,13 +9,21 @@ from typing import AsyncGenerator
 from dotenv import load_dotenv
 
 load_dotenv()
+load_dotenv()
+print("=== ENV DEBUG ===")
+print("cwd:", os.getcwd())
+print("LLM_PROVIDER:", repr(os.getenv("LLM_PROVIDER")))
+print("LLM_MODEL:", repr(os.getenv("LLM_MODEL")))
+print("AZURE_OPENAI_DEPLOYMENT:", repr(os.getenv("AZURE_OPENAI_DEPLOYMENT")))
+print("==================")
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from agents.data_migration import data_migration_agent, validate_db, _db_path
+from agents.data_migration import data_migration_agent, validate_db, _db_path, _report_path
+from agents.mapping_inference import mapping_inference_agent
 from graph import compiled_graph
 from models import MappingItem, MigrationState
 
@@ -97,6 +105,30 @@ async def _do_migrate_and_enqueue(session_id: str, confirmed_mappings: list):
     queue.put_nowait(None)
 
 
+async def _do_mapping_and_enqueue(session_id: str, selected_tables: list[str]):
+    queue = _sse_queues[session_id]
+    state = dict(_get_state(session_id))
+    state["selected_tables"] = selected_tables
+    state["events"] = []
+    loop = asyncio.get_event_loop()
+
+    def _run():
+        result = mapping_inference_agent(state)
+        for ev in result.get("events", []):
+            loop.call_soon_threadsafe(queue.put_nowait, ev)
+        compiled_graph.update_state(
+            _graph_config(session_id),
+            {
+                "selected_tables": selected_tables,
+                "proposed_mappings": result["proposed_mappings"],
+                "stage": "REVIEWING",
+            },
+        )
+
+    await loop.run_in_executor(None, _run)
+    queue.put_nowait(None)
+
+
 # ── routes ────────────────────────────────────────────────────────────────────
 
 @app.get("/")
@@ -141,7 +173,6 @@ async def start_session(session_id: str):
         raise HTTPException(400, "Exactly one .sql DDL file required")
     if not data_files:
         raise HTTPException(400, "At least one data file required")
-
     initial_state: MigrationState = {
         "session_id": session_id,
         "stage": "PROFILING",
@@ -149,6 +180,7 @@ async def start_session(session_id: str):
         "ddl_content": ddl_files[0].read_text(),
         "intermediate_catalog": [],
         "target_tables": [],
+        "selected_tables": [],
         "proposed_mappings": [],
         "confirmed_mappings": [],
         "rows_loaded": {},
@@ -188,7 +220,33 @@ async def get_mappings(session_id: str):
 @app.get("/sessions/{session_id}/schema")
 async def get_schema(session_id: str):
     state = _get_state(session_id)
-    return {"tables": state.get("target_tables", [])}
+    return {
+        "tables": state.get("target_tables", []),
+        "selected_tables": state.get("selected_tables", []),
+    }
+
+
+@app.get("/sessions/{session_id}/catalog")
+async def get_catalog(session_id: str):
+    state = _get_state(session_id)
+    return {"catalog": state.get("intermediate_catalog", [])}
+
+
+class TableSelectionBody(BaseModel):
+    tables: list[str]
+
+
+@app.post("/sessions/{session_id}/select-tables")
+async def select_tables(session_id: str, body: TableSelectionBody):
+    state = _get_state(session_id)
+    available = {table["name"] for table in state.get("target_tables", [])}
+    selected = [name for name in body.tables if name in available]
+    if not selected:
+        raise HTTPException(400, "Select at least one table from the target schema")
+
+    _sse_queues[session_id] = asyncio.Queue()
+    asyncio.create_task(_do_mapping_and_enqueue(session_id, selected))
+    return {"status": "mapping", "selected_tables": selected}
 
 
 class MappingUpdate(BaseModel):
@@ -266,7 +324,7 @@ async def download_db(session_id: str):
 
 @app.get("/sessions/{session_id}/download/report")
 async def download_report(session_id: str):
-    path = os.path.join("data", "output", session_id, "report.json")
+    path = _report_path(session_id)
     if not os.path.exists(path):
         raise HTTPException(404, "Report not ready")
     return FileResponse(path, media_type="application/json", filename="migration_report.json")

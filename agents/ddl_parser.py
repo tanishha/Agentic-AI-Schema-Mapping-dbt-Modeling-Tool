@@ -4,7 +4,7 @@ from typing import List, Tuple
 
 import sqlglot
 import sqlglot.expressions as exp
-from openai import OpenAI
+from llm_client import get_llm_client, get_model_name
 
 from models import ForeignKey, TableSchema, TargetColumn, MigrationState
 
@@ -14,10 +14,14 @@ def _extract_fks(schema_expr, col_names: List[str]) -> List[ForeignKey]:
     fks: List[ForeignKey] = []
     for col_def in schema_expr.find_all(exp.ColumnDef):
         col_name = col_def.name
-        for ref in col_def.find_all(exp.Reference):
+        for constraint in col_def.find_all(exp.ColumnConstraint):
+            if not isinstance(constraint.kind, exp.Reference):
+                continue
+            ref = constraint.kind
             try:
-                ref_table = ref.this.name
-                ref_cols = [c.name for c in ref.expressions]
+                ref_schema = ref.this
+                ref_table = ref_schema.this.name
+                ref_cols = [c.name for c in ref_schema.expressions]
                 if ref_table and ref_cols:
                     fks.append(ForeignKey(
                         column=col_name,
@@ -82,11 +86,9 @@ def _parse_with_sqlglot(ddl: str) -> List[TableSchema]:
 
 
 def _parse_with_llm(ddl: str) -> List[TableSchema]:
-    client = OpenAI(
-        base_url=os.getenv("LLM_BASE_URL", "http://localhost:11434/v1"),
-        api_key=os.getenv("LLM_API_KEY", "ollama"),
-    )
-    model = os.getenv("LLM_MODEL_FAST", "qwen3.5:4b")
+    client = get_llm_client()
+    model = get_model_name(fast=True)
+
     prompt = (
         "Parse this SQL DDL. Return JSON only — no prose, no markdown fences.\n"
         'Schema: [{"name": "table_name", "columns": [{"name": "...", "sql_type": "...", '

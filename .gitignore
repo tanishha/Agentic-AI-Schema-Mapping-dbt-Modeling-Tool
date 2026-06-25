@@ -27,6 +27,7 @@ env/
 data/uploads/
 data/checkpoints.db
 data/output/
+data/database/*.db
 migration.db
 
 # Editor / OS
@@ -39,3 +40,5 @@ Thumbs.db
 
 # Jupyter
 .ipynb_checkpoints/
+
+generation.py
