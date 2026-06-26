@@ -7,6 +7,8 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from models import MigrationState
 from agents.file_profiler import file_profiler_agent
 from agents.ddl_parser import ddl_parser_agent
+from agents.schema_generation import schema_generation_agent
+from agents.schema_review import schema_review_node
 from agents.mapping_inference import mapping_inference_agent
 from agents.table_selection import table_selection_node
 from agents.human_review import human_review_node
@@ -15,12 +17,20 @@ from agents.data_migration import data_migration_agent
 CHECKPOINT_DB = os.getenv("CHECKPOINT_DB", "data/checkpoints.db")
 
 
+def _route_after_profiler(state: MigrationState) -> str:
+    if state.get("schema_mode") == "generate":
+        return "schema_generation"
+    return "ddl_parser"
+
+
 def build_graph():
     os.makedirs(os.path.dirname(CHECKPOINT_DB), exist_ok=True)
 
     builder = StateGraph(MigrationState)
 
     builder.add_node("file_profiler", file_profiler_agent)
+    builder.add_node("schema_generation", schema_generation_agent)
+    builder.add_node("schema_review", schema_review_node)
     builder.add_node("ddl_parser", ddl_parser_agent)
     builder.add_node("table_selection", table_selection_node)
     builder.add_node("mapping_inference", mapping_inference_agent)
@@ -28,7 +38,16 @@ def build_graph():
     builder.add_node("data_migration", data_migration_agent)
 
     builder.set_entry_point("file_profiler")
-    builder.add_edge("file_profiler", "ddl_parser")
+    builder.add_conditional_edges(
+        "file_profiler",
+        _route_after_profiler,
+        {
+            "schema_generation": "schema_generation",
+            "ddl_parser": "ddl_parser",
+        },
+    )
+    builder.add_edge("schema_generation", "schema_review")
+    builder.add_edge("schema_review", "ddl_parser")
     builder.add_edge("ddl_parser", "table_selection")
     builder.add_edge("table_selection", "mapping_inference")
     builder.add_edge("mapping_inference", "human_review")
@@ -40,7 +59,7 @@ def build_graph():
 
     return builder.compile(
         checkpointer=checkpointer,
-        interrupt_before=["table_selection", "human_review"],
+        interrupt_before=["schema_review", "table_selection", "human_review"],
     )
 
 

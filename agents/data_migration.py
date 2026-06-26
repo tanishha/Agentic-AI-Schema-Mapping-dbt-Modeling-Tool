@@ -7,6 +7,7 @@ from typing import List
 
 import pandas as pd
 
+from agents.data_io import load_source_dataframe
 from models import MappingItem, MigrationState, TableSchema, ValidationResult
 
 
@@ -31,15 +32,7 @@ def _report_path(session_id: str) -> str:
 
 
 def _load_source_file(path: str) -> pd.DataFrame:
-    ext = os.path.splitext(path)[1].lower()
-    if ext == ".csv":
-        return pd.read_csv(path)
-    if ext == ".json":
-        try:
-            return pd.read_json(path, orient="records", lines=False)
-        except ValueError:
-            return pd.read_json(path, orient="records", lines=True)
-    raise ValueError(f"Unsupported file: {path}")
+    return load_source_dataframe(path)
 
 
 def _apply_mappings(df: pd.DataFrame, mappings: List[MappingItem], source_path: str) -> pd.DataFrame:

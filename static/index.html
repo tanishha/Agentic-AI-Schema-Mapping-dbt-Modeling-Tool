@@ -98,6 +98,78 @@ header p  { color: var(--muted); font-size: 13px; margin-top: 4px; }
 .dropzone p    { color: var(--muted); font-size: 13px; margin-top: 6px; }
 .dropzone .icon{ font-size: 28px; }
 
+.schema-mode {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.schema-mode label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  cursor: pointer;
+}
+.schema-mode input { margin-top: 3px; accent-color: var(--accent); }
+.schema-mode strong { display: block; font-size: 13px; color: var(--text); }
+.schema-mode span { display: block; color: var(--muted); font-size: 12px; margin-top: 3px; line-height: 1.35; }
+.schema-draft { margin-top: 16px; }
+.schema-draft textarea {
+  width: 100%;
+  min-height: 280px;
+  resize: vertical;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.schema-draft-note { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+.schema-chat {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  padding: 12px;
+}
+.schema-chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 150px;
+  overflow: auto;
+  margin-bottom: 10px;
+}
+.schema-chat-msg {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text);
+  border-left: 3px solid var(--border);
+  padding-left: 8px;
+}
+.schema-chat-msg.user { border-left-color: var(--accent); }
+.schema-chat-msg.assistant { border-left-color: var(--green); color: var(--muted); }
+.schema-chat textarea {
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 /* File list */
 .file-list { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
 .file-item {
@@ -309,6 +381,29 @@ select.inline-select:focus { outline: none; border-color: var(--accent); }
 <!-- ── Panel 1: Upload ─────────────────────────────────────────────────── -->
 <div class="card" id="panel-upload">
   <h2>Upload files</h2>
+  <div class="schema-mode" id="schema-mode">
+    <label>
+      <input type="radio" name="schema-mode" value="upload" checked>
+      <span>
+        <strong>Use uploaded target_schema.sql</strong>
+        <span>Best when the target schema already exists.</span>
+      </span>
+    </label>
+    <label>
+      <input type="radio" name="schema-mode" value="generate">
+      <span>
+        <strong>Generate suggested schema</strong>
+        <span>Best for first upload; review the generated DDL before mapping.</span>
+      </span>
+    </label>
+    <label>
+      <input type="radio" name="schema-mode" value="project">
+      <span>
+        <strong>Use project.db schema</strong>
+        <span>Best for loading a new source file into the existing database.</span>
+      </span>
+    </label>
+  </div>
   <div class="dropzone" id="dropzone" tabindex="0" role="button"
        aria-label="Drop files or click to browse">
     <div class="icon">📂</div>
@@ -327,6 +422,24 @@ select.inline-select:focus { outline: none; border-color: var(--accent); }
 <div class="card hidden" id="panel-profiling">
   <h2>Pipeline Progress</h2>
   <div class="progress-log" id="profiling-log"></div>
+  <div class="schema-draft hidden" id="schema-draft-box">
+    <h3>Review Suggested Schema</h3>
+    <p class="schema-draft-note">Edit this SQLite DDL if needed, then continue to table selection.</p>
+    <textarea id="schema-draft" spellcheck="false"></textarea>
+    <div class="schema-chat">
+      <div class="schema-chat-log" id="schema-chat-log">
+        <div class="schema-chat-msg assistant">Ask for changes to this draft schema before continuing.</div>
+      </div>
+      <textarea id="schema-feedback" spellcheck="true" placeholder="Example: split city and country into an addresses table, linked to customers."></textarea>
+      <div class="actions">
+        <button type="button" class="btn btn-secondary" id="btn-refine-schema">Apply Feedback</button>
+      </div>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn btn-secondary" id="btn-download-schema-draft">Download Schema</button>
+      <button type="button" class="btn btn-primary" id="btn-confirm-schema">Use Schema &amp; Continue</button>
+    </div>
+  </div>
   <div class="table-select-box hidden" id="table-select-box">
     <h3>Select Target Tables</h3>
     <div class="table-select-list" id="table-select-list"></div>
@@ -427,6 +540,7 @@ select.inline-select:focus { outline: none; border-color: var(--accent); }
   <div class="download-row">
     <button type="button" class="btn btn-secondary" id="btn-dl-db">⬇ Download migration.db</button>
     <button type="button" class="btn btn-secondary" id="btn-dl-report">⬇ Download Report (JSON)</button>
+    <button type="button" class="btn btn-secondary" id="btn-dl-schema">⬇ Download Schema</button>
   </div>
   <div class="actions done-actions">
     <button type="button" class="btn btn-ghost"   id="btn-edit-mappings">✏ Edit Mappings</button>
@@ -438,6 +552,7 @@ select.inline-select:focus { outline: none; border-color: var(--accent); }
 // ── App state ────────────────────────────────────────────────────────────────
 const S = {
   sessionId: null,
+  schemaMode: 'upload',
   files: [],           // {file, type}
   mappings: [],        // MappingItem[]
   targetTables: [],    // selected TableSchema[]
@@ -475,6 +590,15 @@ const fileInput  = document.getElementById('file-input');
 const fileList   = document.getElementById('file-list');
 const btnStart   = document.getElementById('btn-start');
 const uploadErr  = document.getElementById('upload-error');
+const schemaRadios = [...document.querySelectorAll('input[name="schema-mode"]')];
+const uploadHelp = document.querySelector('#dropzone p');
+
+schemaRadios.forEach(radio => {
+  radio.addEventListener('change', () => {
+    S.schemaMode = document.querySelector('input[name="schema-mode"]:checked').value;
+    renderFileList();
+  });
+});
 
 dropzone.addEventListener('click', () => fileInput.click());
 dropzone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') fileInput.click(); });
@@ -511,10 +635,21 @@ function renderFileList() {
   });
   const ddls  = S.files.filter(f => f.type === 'ddl').length;
   const datas = S.files.filter(f => f.type === 'data').length;
-  btnStart.disabled = !(ddls === 1 && datas >= 1);
+  if (uploadHelp) {
+    uploadHelp.textContent = S.schemaMode === 'upload'
+      ? 'Accept: .csv, .json (data files) and exactly one .sql (DDL)'
+      : S.schemaMode === 'project'
+        ? 'Accept: .csv or .json data files. Schema will be read from data/database/project.db.'
+        : 'Accept: .csv or .json data files. SQL is optional and ignored in generated-schema mode.';
+  }
+  btnStart.disabled = S.schemaMode === 'upload'
+    ? !(ddls === 1 && datas >= 1)
+    : datas < 1;
 }
 
 // ── Start pipeline ───────────────────────────────────────────────────────────
+renderFileList();
+
 btnStart.addEventListener('click', async () => {
   btnStart.disabled = true; btnStart.textContent = 'Starting…';
   uploadErr.classList.add('hidden');
@@ -524,8 +659,10 @@ btnStart.addEventListener('click', async () => {
     const form = new FormData();
     S.files.forEach(item => form.append('files', item.file));
     await fetch(`/sessions/${S.sessionId}/upload`, { method:'POST', body: form });
-    await api('POST', `/sessions/${S.sessionId}/start`);
+    await api('POST', `/sessions/${S.sessionId}/start?schema_mode=${encodeURIComponent(S.schemaMode)}`);
     showPanel('profiling', 1);
+    document.getElementById('schema-draft-box').classList.add('hidden');
+    document.getElementById('table-select-box').classList.add('hidden');
     startSSE();
   } catch (err) {
     showErr(uploadErr, 'Failed to start: ' + err.message);
@@ -555,7 +692,17 @@ function handleEvent(ev) {
     case 'ddl_parsed': {
       const tableList = ev.payload.tables.map(t => `"${t.name}" (${t.columns} cols)`).join(', ');
       upsertLog(profilingLog, 'plog-ddl', '✅', `DDL parsed → ${tableList}`);
-      loadSchemaAndShowTableSelection();
+      loadSchemaAndShowTableSelection().catch(err => {
+        showErr(document.getElementById('profiling-error'), 'Could not load parsed schema: ' + err.message);
+      });
+      break;
+    }
+    case 'schema_generated': {
+      const source = ev.payload.source === 'llm' ? 'AI draft' : 'fallback draft';
+      upsertLog(profilingLog, 'plog-schema-gen', 'OK', `Suggested schema generated (${source})`);
+      loadSchemaDraftAndShowReview(ev.payload.ddl || '').catch(err => {
+        showErr(document.getElementById('profiling-error'), 'Could not load schema draft: ' + err.message);
+      });
       break;
     }
     case 'mapping_ready': {
@@ -568,7 +715,9 @@ function handleEvent(ev) {
       // After confirm is clicked S.migrationStarted=true so stale mapping_ready
       // events (if any) cannot force the app back to the review panel.
       if (!S.migrationStarted) {
-        loadSchemaAndShowReview();
+        loadSchemaAndShowReview().catch(err => {
+          showErr(document.getElementById('profiling-error'), 'Could not open mapping review: ' + err.message);
+        });
       }
       break;
     }
@@ -588,6 +737,12 @@ function handleEvent(ev) {
     }
     case 'error': {
       showErr(document.getElementById('profiling-error'), ev.payload.message);
+      const schemaBox = document.getElementById('schema-draft-box');
+      const schemaBtn = document.getElementById('btn-confirm-schema');
+      if (!schemaBox.classList.contains('hidden')) {
+        schemaBtn.disabled = false;
+        schemaBtn.textContent = 'Use Schema & Continue';
+      }
       break;
     }
     case 'stream_end':
@@ -630,8 +785,93 @@ async function loadSchemaAndShowTableSelection() {
     ? selected_tables
     : tables.map(t => t.name);
   renderTableSelection();
+  document.getElementById('schema-draft-box').classList.add('hidden');
   document.getElementById('table-select-box').classList.remove('hidden');
 }
+
+async function loadSchemaDraftAndShowReview(initialDdl) {
+  let ddl = initialDdl;
+  if (!ddl) {
+    const draft = await api('GET', `/sessions/${S.sessionId}/schema-draft`);
+    ddl = draft.ddl_content || '';
+  }
+  const box = document.getElementById('schema-draft-box');
+  const btn = document.getElementById('btn-confirm-schema');
+  document.getElementById('schema-draft').value = ddl;
+  document.getElementById('schema-feedback').value = '';
+  document.getElementById('schema-chat-log').innerHTML =
+    '<div class="schema-chat-msg assistant">Ask for changes to this draft schema before continuing.</div>';
+  btn.disabled = false;
+  btn.textContent = 'Use Schema & Continue';
+  document.getElementById('table-select-box').classList.add('hidden');
+  box.classList.remove('hidden');
+}
+
+function addSchemaChatMessage(role, text) {
+  const log = document.getElementById('schema-chat-log');
+  const msg = el('div', `schema-chat-msg ${role}`);
+  msg.textContent = text;
+  log.appendChild(msg);
+  log.scrollTop = log.scrollHeight;
+}
+
+document.getElementById('btn-refine-schema').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-refine-schema');
+  const feedbackEl = document.getElementById('schema-feedback');
+  const draftEl = document.getElementById('schema-draft');
+  const feedback = feedbackEl.value.trim();
+  if (!feedback) {
+    showErr(document.getElementById('profiling-error'), 'Enter schema feedback first.');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Applying...';
+  document.getElementById('profiling-error').classList.add('hidden');
+  addSchemaChatMessage('user', feedback);
+
+  try {
+    const result = await api('POST', `/sessions/${S.sessionId}/schema-feedback`, {
+      ddl_content: draftEl.value,
+      feedback,
+    });
+    draftEl.value = result.ddl_content || draftEl.value;
+    feedbackEl.value = '';
+    addSchemaChatMessage(
+      'assistant',
+      result.source === 'llm'
+        ? 'Updated the schema draft.'
+        : 'Could not reach the model, so the schema draft was left unchanged.'
+    );
+  } catch (err) {
+    showErr(document.getElementById('profiling-error'), 'Schema feedback failed: ' + err.message);
+    addSchemaChatMessage('assistant', 'Feedback was not applied.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Apply Feedback';
+  }
+});
+
+document.getElementById('btn-confirm-schema').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-confirm-schema');
+  const ddl = document.getElementById('schema-draft').value.trim();
+  if (!ddl) {
+    showErr(document.getElementById('profiling-error'), 'Schema DDL cannot be empty.');
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = 'Parsing schema...';
+  document.getElementById('profiling-error').classList.add('hidden');
+  try {
+    await api('POST', `/sessions/${S.sessionId}/confirm-schema`, { ddl_content: ddl });
+    upsertLog(profilingLog, 'plog-ddl', '', 'Parsing approved schema...', true);
+    startSSE();
+  } catch (err) {
+    showErr(document.getElementById('profiling-error'), 'Schema parse failed: ' + err.message);
+    btn.disabled = false;
+    btn.textContent = 'Use Schema & Continue';
+  }
+});
 
 function renderTableSelection() {
   const list = document.getElementById('table-select-list');
@@ -677,6 +917,9 @@ async function loadSchemaAndShowReview() {
     ? selected_tables
     : tables.map(t => t.name);
   S.targetTables = tables.filter(t => S.selectedTables.includes(t.name));
+  if (!S.targetTables.length) {
+    throw new Error('No selected target tables are available for review.');
+  }
   S.currentTableIdx = 0;
 
   // Build filesByName from the profiler catalog, not from LLM mappings.
@@ -700,6 +943,10 @@ function renderTablePage() {
   const tables = S.targetTables;
   const idx    = S.currentTableIdx;
   const table  = tables[idx];
+  if (!table) {
+    showErr(document.getElementById('review-error'), 'No selected table is available to review.');
+    return;
+  }
 
   document.getElementById('table-nav-label').textContent = `Table: ${table.name}`;
   document.getElementById('table-nav-sub').textContent   =
@@ -712,7 +959,7 @@ function renderTablePage() {
   const chips = document.getElementById('col-chips');
   chips.innerHTML = '';
   table.columns.forEach(col => {
-    const isFk = table.foreign_keys.some(fk => fk.column === col.name);
+    const isFk = (table.foreign_keys || []).some(fk => fk.column === col.name);
     const cls  = col.primary_key ? 'col-chip pk'
                : isFk            ? 'col-chip fk'
                : !col.nullable   ? 'col-chip req'
@@ -732,10 +979,11 @@ function renderTablePage() {
   tbody.innerHTML = '';
   tableMappings.forEach(m => renderMappingRow(tbody, m, table));
   updateConfirmButton();
+  document.getElementById('btn-confirm').disabled = false;
 }
 
 function renderMappingRow(tbody, m, table) {
-  const isFk  = table.foreign_keys.some(fk => fk.column === m.target_column);
+  const isFk  = (table.foreign_keys || []).some(fk => fk.column === m.target_column);
   const isPk  = table.columns.find(c => c.name === m.target_column)?.primary_key;
   const colInfo = table.columns.find(c => c.name === m.target_column);
 
@@ -747,6 +995,7 @@ function renderMappingRow(tbody, m, table) {
   nameSpan.textContent = m.target_column;
   tdTarget.appendChild(nameSpan);
   if (isPk)       tdTarget.appendChild(chip('PK', '#f59e0b', 'rgba(245,158,11,.15)'));
+  if (isAutoGeneratedPrimaryKey(colInfo)) tdTarget.appendChild(chip('AUTO', '#22c55e', 'rgba(34,197,94,.15)'));
   if (isFk)       tdTarget.appendChild(chip('FK', '#6c63ff', 'rgba(108,99,255,.15)'));
   if (!colInfo?.nullable && !isPk) tdTarget.appendChild(chip('*', '#ef4444', 'rgba(239,68,68,.1)'));
   tr.appendChild(tdTarget);
@@ -790,6 +1039,7 @@ function renderMappingRow(tbody, m, table) {
     await patchMapping(m.id, { source_file: newFile || null, source_column: null });
     patchLocal(m.id, { source_file: newFile || null, source_column: null });
     updateConfirmButton();
+    document.getElementById('btn-confirm').disabled = false;
   });
 
   colSelect.addEventListener('change', async () => {
@@ -797,6 +1047,7 @@ function renderMappingRow(tbody, m, table) {
     await patchMapping(m.id, { source_file: fileSelect.value || null, source_column: newCol });
     patchLocal(m.id, { source_column: newCol });
     updateConfirmButton();
+    document.getElementById('btn-confirm').disabled = false;
   });
 }
 
@@ -854,7 +1105,29 @@ function updateConfirmButton() {
       return !m || !m.source_column;
     })
   );
-  document.getElementById('btn-confirm').disabled = allMissing;
+  document.getElementById('btn-confirm').disabled = false;
+}
+
+function isAutoGeneratedPrimaryKey(col) {
+  return col.primary_key && /\bINT(EGER)?\b/i.test(col.sql_type || '');
+}
+
+function mappingValidationIssues() {
+  const issues = [];
+  S.targetTables.forEach(table => {
+    table.columns.forEach(col => {
+      if (col.nullable && !col.primary_key) return;
+      if (isAutoGeneratedPrimaryKey(col)) return;
+
+      const m = S.mappings.find(x =>
+        x.target_table === table.name && x.target_column === col.name
+      );
+      if (!m || !m.source_column) {
+        issues.push(`${table.name}.${col.name} is required and has no source column selected.`);
+      }
+    });
+  });
+  return issues;
 }
 
 function patchLocal(id, patch) {
@@ -879,6 +1152,17 @@ document.getElementById('btn-next-table').addEventListener('click', () => {
 
 // ── Confirm ───────────────────────────────────────────────────────────────────
 document.getElementById('btn-confirm').addEventListener('click', async () => {
+  const issues = mappingValidationIssues();
+  if (issues.length) {
+    showErr(
+      document.getElementById('review-error'),
+      'Cannot migrate yet: ' + issues.slice(0, 5).join(' ')
+        + (issues.length > 5 ? ` ${issues.length - 5} more required mappings missing.` : '')
+    );
+    return;
+  }
+
+  document.getElementById('review-error').classList.add('hidden');
   document.getElementById('btn-confirm').disabled = true;
   S.migrationStarted = true;
 
@@ -1002,7 +1286,7 @@ function renderERD(tables, wrapId) {
   }
 
   const TW = 270, ROW_H = 24, HEAD_H = 36, PAD = 96;
-  const COLS = Math.min(tables.length, 2);
+  const COLS = Math.min(tables.length, 3);
 
   // Grid positions
   const pos = {};
@@ -1063,27 +1347,19 @@ function renderERD(tables, wrapId) {
 
       if (src.col === dst.col) {
         // Same column: route via the right outer edge
-        const outerX = src.x + TW + 36;
-        sx = src.x + TW; dx = dst.x + TW;
-        path = `M${sx},${sy} Q${outerX},${sy} ${outerX},${(sy + dy) / 2} Q${outerX},${dy} ${dx},${dy}`;
+        const outerX = src.x - 42;
+        sx = src.x; dx = dst.x;
+        path = `M${sx},${sy} L${outerX},${sy} L${outerX},${dy} L${dx},${dy}`;
       } else if (dst.x > src.x) {
         // Dest is to the RIGHT → right edge → left edge
         sx = src.x + TW; dx = dst.x;
-        const gap = Math.max(dx - sx, 10);
-        path = `M${sx},${sy} C${sx + gap * 0.45},${sy} ${dx - gap * 0.45},${dy} ${dx},${dy}`;
+        const midX = (sx + dx) / 2;
+        path = `M${sx},${sy} L${midX},${sy} L${midX},${dy} L${dx},${dy}`;
       } else {
         // Dest is to the LEFT → left edge → right edge
         sx = src.x; dx = dst.x + TW;
-        const gap = Math.max(sx - dx, 10);
-        if (Math.abs(src.col - dst.col) === 1) {
-          // Adjacent tables: simple bezier through the gap
-          path = `M${sx},${sy} C${sx - gap * 0.45},${sy} ${dx + gap * 0.45},${dy} ${dx},${dy}`;
-        } else {
-          // Spanning one or more tables: route above all tables to stay visible
-          const overY = Math.min(src.y, dst.y) - 28;
-          path = `M${sx},${sy} L${sx},${overY + 12} Q${sx},${overY} ${sx - 12},${overY}` +
-                 ` L${dx + 12},${overY} Q${dx},${overY} ${dx},${overY + 12} L${dx},${dy}`;
-        }
+        const midX = (sx + dx) / 2;
+        path = `M${sx},${sy} L${midX},${sy} L${midX},${dy} L${dx},${dy}`;
       }
 
       const nOnLeftEdge = sx <= src.x + 1;
@@ -1094,7 +1370,7 @@ function renderERD(tables, wrapId) {
       const oneAnchor = oneOnLeftEdge ? 'end' : 'start';
 
       arrows += `<path d="${path}" fill="none" stroke="${C.accent}"
-        stroke-width="2.5"
+        stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"
         marker-end="url(#${markerId})"/>`;
       arrows += `<text x="${nX}" y="${sy - 7}" text-anchor="${nAnchor}" fill="${C.accent}" font-size="11"
         font-weight="700" font-family="Inter,system-ui,sans-serif">N</text>
@@ -1178,6 +1454,17 @@ document.getElementById('btn-edit-mappings').addEventListener('click', () => {
 });
 
 async function remigrate() {
+  const issues = mappingValidationIssues();
+  if (issues.length) {
+    showErr(
+      document.getElementById('review-error'),
+      'Cannot migrate yet: ' + issues.slice(0, 5).join(' ')
+        + (issues.length > 5 ? ` ${issues.length - 5} more required mappings missing.` : '')
+    );
+    return;
+  }
+
+  document.getElementById('review-error').classList.add('hidden');
   document.getElementById('btn-confirm').disabled = true;
   S.migrationStarted = true;
 
@@ -1211,10 +1498,26 @@ document.getElementById('btn-dl-db').addEventListener('click', () => {
 document.getElementById('btn-dl-report').addEventListener('click', () => {
   dlFile(`/sessions/${S.sessionId}/download/report`, 'migration_report.json');
 });
+document.getElementById('btn-dl-schema').addEventListener('click', () => {
+  dlFile(`/sessions/${S.sessionId}/download/schema`, 'target_schema.sql');
+});
+document.getElementById('btn-download-schema-draft').addEventListener('click', () => {
+  downloadText('target_schema.sql', document.getElementById('schema-draft').value || '');
+});
 
 function dlFile(url, filename) {
   const a = document.createElement('a');
   a.href = url; a.download = filename; a.click();
+}
+
+function downloadText(filename, text) {
+  const blob = new Blob([text], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 // ── Reset ─────────────────────────────────────────────────────────────────────
@@ -1222,8 +1525,10 @@ function resetApp() {
   S.sessionId = null; S.files = []; S.mappings = [];
   S.targetTables = []; S.allTargetTables = []; S.selectedTables = []; S.sourceCatalog = [];
   S.filesByName = {}; S.currentTableIdx = 0;
+  S.schemaMode = 'upload';
   S.migrationStarted = false;
   S.sseSource && S.sseSource.close(); S.sseSource = null;
+  document.querySelector('input[name="schema-mode"][value="upload"]').checked = true;
 
   fileList.innerHTML = '';
   document.getElementById('profiling-log').innerHTML    = '';
@@ -1248,8 +1553,10 @@ function resetApp() {
   document.getElementById('migration-live').classList.add('hidden');
   document.getElementById('migration-summary').classList.add('hidden');
   document.getElementById('table-select-box').classList.add('hidden');
+  document.getElementById('schema-draft-box').classList.add('hidden');
 
   showPanel('upload', 0);
+  renderFileList();
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

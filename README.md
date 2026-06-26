@@ -145,6 +145,18 @@ Open [http://localhost:8000](http://localhost:8000) in your browser.
 
 ---
 
+## Database credentials
+
+This project uses SQLite, so there is no database username, password, host, or port. The database is a normal file on disk:
+
+- `data/uploads/<session-id>/migration.db` is the session-specific database.
+- `data/database/project.db` is the shared project database.
+- `data/checkpoints.db` is LangGraph's internal workflow checkpoint database.
+
+When sharing the repo, do not commit `.env` because it can contain LLM API keys. Usually you share `.env.example`, source code, sample files, and setup steps. Decide separately whether to include generated `.db` files and uploaded data, depending on whether those files contain private data.
+
+---
+
 ## Project structure
 
 ```

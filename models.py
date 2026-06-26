@@ -54,6 +54,7 @@ class MigrationState(TypedDict):
         "UPLOADING", "PROFILING", "READY", "MAPPING",
         "REVIEWING", "MIGRATING", "DONE", "ERROR"
     ]
+    schema_mode: Literal["upload", "generate", "project"]
     source_files: List[str]
     ddl_content: str
     intermediate_catalog: List[ColumnProfile]

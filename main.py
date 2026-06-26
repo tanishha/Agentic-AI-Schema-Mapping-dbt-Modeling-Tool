@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import shutil
+import sqlite3
 import uuid
 from pathlib import Path
 from typing import AsyncGenerator
@@ -9,21 +10,16 @@ from typing import AsyncGenerator
 from dotenv import load_dotenv
 
 load_dotenv()
-load_dotenv()
-print("=== ENV DEBUG ===")
-print("cwd:", os.getcwd())
-print("LLM_PROVIDER:", repr(os.getenv("LLM_PROVIDER")))
-print("LLM_MODEL:", repr(os.getenv("LLM_MODEL")))
-print("AZURE_OPENAI_DEPLOYMENT:", repr(os.getenv("AZURE_OPENAI_DEPLOYMENT")))
-print("==================")
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from agents.data_migration import data_migration_agent, validate_db, _db_path, _report_path
+from agents.data_migration import data_migration_agent, validate_db, _db_path, _project_db_path, _report_path
+from agents.ddl_parser import ddl_parser_agent
 from agents.mapping_inference import mapping_inference_agent
+from agents.schema_generation import refine_schema_with_feedback
 from graph import compiled_graph
 from models import MappingItem, MigrationState
 
@@ -60,19 +56,55 @@ def _get_state(session_id: str) -> MigrationState:
     return snapshot.values
 
 
+def _project_schema_ddl() -> str:
+    db_path = _project_db_path()
+    if not os.path.exists(db_path):
+        raise HTTPException(400, f"Project DB not found: {db_path}")
+
+    conn = sqlite3.connect(db_path)
+    try:
+        rows = conn.execute(
+            """
+            SELECT sql
+            FROM sqlite_master
+            WHERE type = 'table'
+              AND name NOT LIKE 'sqlite_%'
+              AND sql IS NOT NULL
+            ORDER BY name
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+
+    statements = [row[0].strip().rstrip(";") + ";" for row in rows if row[0]]
+    if not statements:
+        raise HTTPException(400, "Project DB has no user tables to reuse as a schema")
+    return "\n\n".join(statements)
+
+
 async def _run_graph_and_enqueue(session_id: str, initial_state: dict):
     queue = _sse_queues.setdefault(session_id, asyncio.Queue())
     loop = asyncio.get_event_loop()
 
     def _invoke():
         events_seen = 0
-        for chunk in compiled_graph.stream(
-            initial_state, _graph_config(session_id), stream_mode="values"
-        ):
-            new_events = chunk.get("events", [])[events_seen:]
-            for ev in new_events:
-                loop.call_soon_threadsafe(queue.put_nowait, ev)
-            events_seen += len(new_events)
+        try:
+            for chunk in compiled_graph.stream(
+                initial_state, _graph_config(session_id), stream_mode="values"
+            ):
+                new_events = chunk.get("events", [])[events_seen:]
+                for ev in new_events:
+                    loop.call_soon_threadsafe(queue.put_nowait, ev)
+                events_seen += len(new_events)
+        except Exception as exc:
+            loop.call_soon_threadsafe(
+                queue.put_nowait,
+                {"type": "error", "payload": {"message": str(exc)}},
+            )
+            compiled_graph.update_state(
+                _graph_config(session_id),
+                {"stage": "ERROR", "error": str(exc)},
+            )
 
     await loop.run_in_executor(None, _invoke)
     queue.put_nowait(None)
@@ -129,6 +161,40 @@ async def _do_mapping_and_enqueue(session_id: str, selected_tables: list[str]):
     queue.put_nowait(None)
 
 
+async def _do_schema_parse_and_enqueue(session_id: str, ddl_content: str):
+    queue = _sse_queues[session_id]
+    state = dict(_get_state(session_id))
+    state["ddl_content"] = ddl_content
+    state["events"] = []
+    loop = asyncio.get_event_loop()
+
+    def _run():
+        try:
+            result = ddl_parser_agent(state)
+            for ev in result.get("events", []):
+                loop.call_soon_threadsafe(queue.put_nowait, ev)
+            compiled_graph.update_state(
+                _graph_config(session_id),
+                {
+                    "ddl_content": ddl_content,
+                    "target_tables": result["target_tables"],
+                    "stage": "MAPPING",
+                },
+            )
+        except Exception as exc:
+            loop.call_soon_threadsafe(
+                queue.put_nowait,
+                {"type": "error", "payload": {"message": str(exc)}},
+            )
+            compiled_graph.update_state(
+                _graph_config(session_id),
+                {"ddl_content": ddl_content, "stage": "ERROR", "error": str(exc)},
+            )
+
+    await loop.run_in_executor(None, _run)
+    queue.put_nowait(None)
+
+
 # ── routes ────────────────────────────────────────────────────────────────────
 
 @app.get("/")
@@ -143,7 +209,9 @@ class SessionOut(BaseModel):
 @app.post("/sessions", response_model=SessionOut)
 async def create_session():
     session_id = str(uuid.uuid4())
-    _session_upload_dir(session_id).mkdir(parents=True, exist_ok=True)
+    upload_dir = _session_upload_dir(session_id)
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    print(f"[SESSION] created id={session_id} upload_dir={upload_dir.resolve()}", flush=True)
     return SessionOut(session_id=session_id)
 
 
@@ -156,28 +224,46 @@ async def upload_files(session_id: str, files: list[UploadFile] = File(...)):
         dest = _safe_path(session_id, f.filename)
         dest.write_bytes(await f.read())
         saved.append(f.filename)
+    print(
+        f"[SESSION] upload id={session_id} upload_dir={upload_dir.resolve()} files={saved}",
+        flush=True,
+    )
     return {"files": saved}
 
 
 @app.post("/sessions/{session_id}/start")
-async def start_session(session_id: str):
+async def start_session(session_id: str, schema_mode: str = "upload"):
     upload_dir = _session_upload_dir(session_id)
     if not upload_dir.exists():
         raise HTTPException(404, "Session not found")
+    print(
+        f"[SESSION] start id={session_id} schema_mode={schema_mode} upload_dir={upload_dir.resolve()}",
+        flush=True,
+    )
+    if schema_mode not in {"upload", "generate", "project"}:
+        raise HTTPException(400, "schema_mode must be upload, generate, or project")
 
     all_files = list(upload_dir.iterdir())
     data_files = [str(f) for f in all_files if f.suffix.lower() in (".csv", ".json")]
     ddl_files = [f for f in all_files if f.suffix.lower() == ".sql"]
 
-    if len(ddl_files) != 1:
+    if schema_mode == "upload" and len(ddl_files) != 1:
         raise HTTPException(400, "Exactly one .sql DDL file required")
     if not data_files:
         raise HTTPException(400, "At least one data file required")
+
+    if schema_mode == "upload":
+        ddl_content = ddl_files[0].read_text()
+    elif schema_mode == "project":
+        ddl_content = _project_schema_ddl()
+    else:
+        ddl_content = ""
     initial_state: MigrationState = {
         "session_id": session_id,
         "stage": "PROFILING",
+        "schema_mode": schema_mode,
         "source_files": data_files,
-        "ddl_content": ddl_files[0].read_text(),
+        "ddl_content": ddl_content,
         "intermediate_catalog": [],
         "target_tables": [],
         "selected_tables": [],
@@ -224,6 +310,74 @@ async def get_schema(session_id: str):
         "tables": state.get("target_tables", []),
         "selected_tables": state.get("selected_tables", []),
     }
+
+
+@app.get("/sessions/{session_id}/schema-draft")
+async def get_schema_draft(session_id: str):
+    state = _get_state(session_id)
+    return {"ddl_content": state.get("ddl_content", "")}
+
+
+@app.get("/sessions/{session_id}/download/schema")
+async def download_schema(session_id: str):
+    state = _get_state(session_id)
+    ddl = state.get("ddl_content", "")
+    if not ddl.strip():
+        raise HTTPException(404, "Schema not ready")
+    return Response(
+        content=ddl,
+        media_type="text/plain",
+        headers={"Content-Disposition": 'attachment; filename="target_schema.sql"'},
+    )
+
+
+@app.get("/database/download/schema")
+async def download_project_schema():
+    ddl = _project_schema_ddl()
+    return Response(
+        content=ddl,
+        media_type="text/plain",
+        headers={"Content-Disposition": 'attachment; filename="project_schema.sql"'},
+    )
+
+
+class SchemaConfirmBody(BaseModel):
+    ddl_content: str
+
+
+class SchemaFeedbackBody(BaseModel):
+    ddl_content: str
+    feedback: str
+
+
+@app.post("/sessions/{session_id}/schema-feedback")
+async def schema_feedback(session_id: str, body: SchemaFeedbackBody):
+    if not body.ddl_content.strip():
+        raise HTTPException(400, "Schema DDL cannot be empty")
+    if not body.feedback.strip():
+        raise HTTPException(400, "Feedback cannot be empty")
+
+    state = dict(_get_state(session_id))
+    loop = asyncio.get_event_loop()
+
+    ddl, source = await loop.run_in_executor(
+        None,
+        lambda: refine_schema_with_feedback(state, body.ddl_content, body.feedback),
+    )
+    compiled_graph.update_state(
+        _graph_config(session_id),
+        {"ddl_content": ddl, "stage": "READY"},
+    )
+    return {"ddl_content": ddl, "source": source}
+
+
+@app.post("/sessions/{session_id}/confirm-schema")
+async def confirm_schema(session_id: str, body: SchemaConfirmBody):
+    if not body.ddl_content.strip():
+        raise HTTPException(400, "Schema DDL cannot be empty")
+    _sse_queues[session_id] = asyncio.Queue()
+    asyncio.create_task(_do_schema_parse_and_enqueue(session_id, body.ddl_content))
+    return {"status": "parsing_schema"}
 
 
 @app.get("/sessions/{session_id}/catalog")

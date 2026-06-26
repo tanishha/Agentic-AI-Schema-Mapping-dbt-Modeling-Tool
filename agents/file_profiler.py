@@ -1,9 +1,9 @@
 import os
-import json
 from typing import List
 
 import pandas as pd
 
+from agents.data_io import display_value, load_source_dataframe
 from models import ColumnProfile, MigrationState
 
 SAMPLE_ROWS = int(os.getenv("PROFILER_SAMPLE_ROWS", "10000"))
@@ -29,32 +29,22 @@ def _infer_type(series: pd.Series) -> str:
 
 
 def profile_file(path: str) -> List[ColumnProfile]:
-    ext = os.path.splitext(path)[1].lower()
-    if ext == ".csv":
-        df = pd.read_csv(path, nrows=SAMPLE_ROWS or None)
-    elif ext == ".json":
-        try:
-            df = pd.read_json(path, orient="records", lines=False)
-        except ValueError:
-            df = pd.read_json(path, orient="records", lines=True)
-        if SAMPLE_ROWS:
-            df = df.head(SAMPLE_ROWS)
-    else:
-        raise ValueError(f"Unsupported file type: {ext}")
+    df = load_source_dataframe(path, nrows=SAMPLE_ROWS or None)
 
     filename = os.path.basename(path)
     profiles: List[ColumnProfile] = []
     for col in df.columns:
         series = df[col]
         non_null = series.dropna()
-        sample_vals = [str(v) for v in non_null.head(5).tolist()]
+        sample_vals = [display_value(v) for v in non_null.head(5).tolist()]
+        distinct_values = series.dropna().map(display_value)
         profiles.append(
             ColumnProfile(
                 source_file=filename,
                 column_name=str(col),
                 inferred_type=_infer_type(series),
                 null_pct=float(round(series.isna().mean(), 4)),
-                distinct_count=int(series.nunique()),
+                distinct_count=int(distinct_values.nunique()),
                 sample_values=sample_vals,
             )
         )
