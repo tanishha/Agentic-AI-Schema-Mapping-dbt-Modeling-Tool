@@ -1,16 +1,28 @@
-# PRD: Agentic Schema Migration Tool
+# PRD: DBMapper Agentic Schema Migration Tool
 
-**Version:** 1.2  
-**Date:** 2026-06-25  
-**Status:** Implemented
+**Version:** 1.5  
+**Date:** 2026-06-26  
+**Status:** Implemented / evolving
 
 ---
 
-## 1. Executive Summary
+## 1. Summary
 
-A browser-based tool that accepts arbitrary CSV and JSON source files plus a target SQL DDL file, uses a LangGraph multi-agent pipeline to profile the sources, infer column mappings with confidence scores, present them in an editable review table, and — once the user confirms — migrates all data into SQLite databases matching the target schema.
+DBMapper is a local browser-based migration tool for loading CSV and JSON source files into SQLite. It supports three target-schema paths:
 
-The system is built on three components: a **LangGraph** agent graph for all AI-driven stages, a **FastAPI** server for the HTTP + Server-Sent Events layer, and a **plain HTML/JS** single-page UI. LLM inference is powered by **Azure AI Foundry** (default) with **Ollama** (local) as an alternative — both exposed through a shared `llm_client.py` factory. Switching providers requires only a `.env` change, no code changes.
+1. Upload an existing `target_schema.sql`.
+2. Generate a suggested schema from uploaded source files.
+3. Reuse the current schema from `data/database/project.db`.
+
+The system profiles source files, parses and validates the target schema, lets the user select target tables, asks an LLM to infer source-to-target mappings, lets the user edit mappings, and writes data into SQLite.
+
+The main components are:
+
+- FastAPI server for routes, SSE, uploads, downloads, and session management.
+- LangGraph workflow for profiling, schema generation/parsing, mapping, and migration stages.
+- Plain HTML/CSS/JS UI in `static/index.html`.
+- SQLite databases for session output, project output, and graph checkpoints.
+- LLM provider abstraction in `llm_client.py` supporting Azure AI Foundry and Ollama.
 
 ---
 
@@ -18,524 +30,362 @@ The system is built on three components: a **LangGraph** agent graph for all AI-
 
 | ID | Goal |
 |---|---|
-| G1 | Accept any number of CSV and JSON files alongside a SQL DDL file in a single upload step |
-| G2 | Profile all source files and build a unified intermediate column catalog before any LLM call |
-| G3 | Allow the user to select which tables in the DDL to target before mapping inference runs |
-| G4 | Infer column mappings (source → target) with a confidence score and human-readable reason for each |
-| G5 | Present mappings in an editable table — the human is always in control before any data moves |
-| G6 | Execute the confirmed mappings into both a session-specific SQLite DB and a shared project DB |
-| G7 | Stream progress to the UI via SSE so the user can see which stage the pipeline is in without polling |
-| G8 | Support Azure AI Foundry and Ollama as interchangeable LLM backends |
+| G1 | Accept one or more CSV/JSON source files per migration session |
+| G2 | Support uploaded, generated, and project DB schema modes |
+| G3 | Profile source columns before LLM mapping |
+| G4 | Validate schema syntax and FK references before mapping |
+| G5 | Let the user select target tables before mapping |
+| G6 | Infer mappings with confidence and reason text |
+| G7 | Let users edit mappings before data is loaded |
+| G8 | Write to a session-specific `migration.db` and shared `project.db` |
+| G9 | Show row counts, validation, ERD, and downloadable outputs |
+| G10 | Print session folder paths in the terminal for easier debugging |
 
-### Out of scope (v1)
+### Out of Scope
 
-- Authentication / multi-tenancy
-- Cloud database targets (Postgres, MySQL, etc.)
-- Complex SQL expressions or multi-column derived fields in mappings
-- Scheduling or recurring batch loads
-
----
-
-## 3. High-Level Architecture
-
-```
-Browser (HTML/JS)
-      │  multipart upload (files + DDL)
-      │  SSE stream (progress events)
-      │  REST (table selection, mappings, confirm)
-      ▼
-FastAPI Server
-      │  creates LangGraph thread per session
-      │  streams graph events → SSE
-      ▼
-LangGraph StateGraph  ──────────────────────────────────────────────
-                                                                    │
-  [FileProfilerAgent]                                               │
-       │ builds intermediate catalog                                │
-       ▼                                                            │
-  [DDLParserAgent]                                                  │
-       │ extracts target schema                                     │
-       ▼                                                            │
-  [TableSelectionNode]  ◄── interrupt_before ─── user picks tables  │
-       │                                                            │
-       ▼                                                            │
-  [MappingInferenceAgent]  ◄── LLM via llm_client.py               │
-       │ returns mappings + confidence                              │
-       ▼                                                            │
-  [HumanReviewNode]  ◄── interrupt_before ──── user edits / confirm │
-       │                                                            │
-       ▼                                                            │
-  [DataMigrationAgent]                                              │
-       │ creates SQLite tables from DDL                             │
-       │ transforms + inserts rows                                  │
-       │ writes to session DB + project DB                          │
-       ▼                                                            │
-     DONE                                                           │
-─────────────────────────────────────────────────────────────────────
-```
-
-**LangGraph** owns all graph state and checkpointing.  
-**FastAPI** is a thin adapter: it receives HTTP requests, forwards them into the graph, and pushes graph events back to the browser over SSE.  
-**SQLite** serves three roles: graph checkpoints (`data/checkpoints.db`), per-session migration output (`data/uploads/<id>/migration.db`), and the shared project database (`data/database/project.db`).
+- Authentication and multi-tenant access control
+- Cloud database targets
+- Automatic lookup-table key propagation for synthetic parent IDs
+- Scheduled/recurring batch loads
+- Large-file chunked migration
 
 ---
 
-## 4. LLM Provider Architecture
+## 3. User Flow
 
-### 4.1 llm_client.py — Shared Factory
+### Step 1: Choose Schema Source and Upload
 
-All LLM calls route through `llm_client.py`. It reads `LLM_PROVIDER` from the environment and returns a correctly configured `openai.OpenAI` client:
+The UI asks the user to choose one schema mode:
 
-```python
-def get_llm_client() -> OpenAI:
-    provider = os.getenv("LLM_PROVIDER", "ollama")
-    if provider == "azure":
-        return OpenAI(
-            base_url=os.environ["AZURE_OPENAI_ENDPOINT"],
-            api_key=os.environ["AZURE_OPENAI_API_KEY"],
-        )
-    return OpenAI(
-        base_url=os.getenv("LLM_BASE_URL", "http://localhost:11434/v1"),
-        api_key=os.getenv("LLM_API_KEY", "ollama"),
-    )
-
-def get_model_name(fast: bool = False) -> str:
-    provider = os.getenv("LLM_PROVIDER", "ollama")
-    if provider == "azure":
-        var = "AZURE_OPENAI_DEPLOYMENT_FAST" if fast else "AZURE_OPENAI_DEPLOYMENT"
-    else:
-        var = "LLM_MODEL_FAST" if fast else "LLM_MODEL"
-    value = os.getenv(var)
-    if not value:
-        raise RuntimeError(f"Missing required env var: {var}")
-    return value
-```
-
-Azure AI Foundry exposes an OpenAI-compatible endpoint (`/openai/v1/`), so the standard `openai.OpenAI` client works without the `AzureOpenAI` variant.
-
-### 4.2 Provider Comparison
-
-| Feature | Azure AI Foundry | Ollama (local) |
+| Mode | Description | Required files |
 |---|---|---|
-| `LLM_PROVIDER` value | `azure` | `ollama` |
-| Auth | API key via `AZURE_OPENAI_API_KEY` | `LLM_API_KEY=ollama` |
-| Endpoint | `AZURE_OPENAI_ENDPOINT` | `LLM_BASE_URL` |
-| Model env var | `AZURE_OPENAI_DEPLOYMENT` | `LLM_MODEL` |
-| Fast model env var | `AZURE_OPENAI_DEPLOYMENT_FAST` | `LLM_MODEL_FAST` |
-| Deployed model (current) | `gpt-4.1` | `qwen2.5:7b` / `qwen3.5:4b` |
-| Internet required | Yes | No |
+| Upload `target_schema.sql` | User supplies existing target DDL | CSV/JSON + one SQL file |
+| Generate suggested schema | AI generates SQLite DDL from source profiles | CSV/JSON only |
+| Use `project.db` schema | Server extracts DDL from existing project DB | CSV/JSON only |
 
----
+### Step 2: Profile Source Files
 
-## 5. User Flow
+`FileProfilerAgent` loads CSV/JSON files through `agents/data_io.py`, flattens JSON where needed, and produces an intermediate catalog with:
 
-### Step 1 — Upload
+- source file
+- column name
+- inferred type
+- null percentage
+- distinct count
+- sample values
 
-- User drops any number of `.csv` or `.json` data files and exactly one `.sql` DDL file.
-- Clicking **Start Profiling** triggers `POST /sessions/{id}/start`.
-- Button label changes to "Profiling…" with a spinner.
+### Step 3: Schema Generation or Parsing
 
-### Step 2 — Profiling & DDL Parse (automated)
+For uploaded SQL and project DB schema modes:
 
-Progress events pushed via SSE as each file is processed. No user action required.
+- DDL is parsed by `DDLParserAgent`.
 
-```
-✅ crm_export.csv      profiled (8 columns)
-✅ legacy_users.json   profiled (11 columns)
-✅ target_schema.sql   parsed → tables: customers, contact_details, addresses
-```
+For generated mode:
 
-### Step 3 — Table Selection (human in the loop)
+- `SchemaGenerationAgent` creates SQLite DDL from the source catalog.
+- The user can edit the DDL directly.
+- The user can provide feedback to regenerate/refine the schema.
+- The user can download the draft schema before continuing.
 
-After DDL parsing the graph pauses (`interrupt_before=["table_selection"]`). The UI presents all tables extracted from the DDL as checkboxes. The user selects which tables to include in this migration run and clicks **Infer Mappings**.
+### Step 4: Schema Validation
 
-`POST /sessions/{id}/select-tables` resumes the graph with the selected table names.
+Before table selection:
 
-### Step 4 — Mapping Inference (automated, LLM)
+- DDL is executed in an in-memory SQLite database.
+- FK references are checked against parsed table/column names.
+- Syntax or semantic errors block progression.
 
-The MappingInferenceAgent is called only for the selected tables. Proposed mappings are streamed back as a `mapping_ready` SSE event.
+Examples:
 
-### Step 5 — Mapping Review (human in the loop)
+- Unquoted reserved table names like `order` fail.
+- FK references to missing tables fail.
+- FK references to missing columns fail.
 
-The graph pauses again (`interrupt_before=["human_review"]`). The browser renders the review table per selected table with editable dropdowns and confidence bars. Clicking **Confirm & Migrate** sends `POST /sessions/{id}/confirm`.
+### Step 5: Table Selection
 
-### Step 6 — Migration
+The user selects one or more target tables to populate.
 
-Progress events streamed per table × source file.
+### Step 6: Mapping Inference
 
-```
-✅ [customers] crm_export.csv     → 200 rows
-✅ [customers] legacy_users.json  → 150 rows
-✅ [addresses] crm_export.csv     → 200 rows
-...
-Done — 900 total rows migrated
-```
+`MappingInferenceAgent` sends the selected target schema and source catalog to the LLM. It returns one mapping row per target column.
 
-### Step 7 — Done
+Rules:
 
-- Row count summary table
-- FK / NOT NULL validation results per table
+- Source file/column must exist in the profiled catalog.
+- Invented source columns are sanitized to `null`.
+- Auto-generated integer primary keys can be skipped.
+- Required non-PK / FK columns must have mappings before migration.
+
+### Step 7: Human Review
+
+The user reviews mappings table-by-table.
+
+`Confirm & Migrate` stays clickable. If required mappings are missing, the UI displays a reason instead of silently disabling the button.
+
+### Step 8: Migration
+
+`DataMigrationAgent`:
+
+- creates/recreates session DB tables
+- creates missing project DB tables
+- applies confirmed mappings
+- inserts transformed rows
+- validates FK and NOT NULL constraints
+- writes `report.json`
+
+### Step 9: Done
+
+The UI shows:
+
+- row counts by table/file
+- migration status and reason
+- validation cards
 - ERD diagram
-- Download `migration.db` and `report.json`
-- **Edit Mappings** — returns to the review panel for re-migration without re-uploading
+- downloads for `migration.db`, `report.json`, and `target_schema.sql`
 
 ---
 
-## 6. Agent Decomposition
+## 4. Architecture
 
-### 6.1 Shared State — models.py
-
-```python
-class MigrationState(TypedDict):
-    session_id: str
-    stage: Literal["UPLOADING", "PROFILING", "READY", "MAPPING",
-                   "REVIEWING", "MIGRATING", "DONE", "ERROR"]
-    source_files: List[str]
-    ddl_content: str
-    intermediate_catalog: List[ColumnProfile]
-    target_tables: List[TableSchema]
-    selected_tables: List[str]          # populated by TableSelectionNode
-    proposed_mappings: List[MappingItem]
-    confirmed_mappings: List[MappingItem]
-    rows_loaded: dict
-    validation_results: List[ValidationResult]
-    error: Optional[str]
-    events: List[dict]
+```text
+Browser UI
+  | upload files
+  | SSE progress
+  | REST actions
+  v
+FastAPI server
+  | manages sessions and upload folders
+  | invokes LangGraph / direct stage helpers
+  v
+LangGraph workflow
+  | file_profiler
+  | schema_generation? / ddl_parser
+  | table_selection interrupt
+  | mapping_inference
+  | human_review interrupt
+  | data_migration
+  v
+SQLite outputs
+  | data/uploads/<session-id>/migration.db
+  | data/database/project.db
+  | data/checkpoints.db
 ```
 
 ---
 
-### 6.2 FileProfilerAgent
+## 5. LangGraph Flow
 
-**File:** `agents/file_profiler.py`  
-**Responsibility:** Read every source file, compute per-column statistics, build the unified intermediate catalog.
+Current graph:
 
-**Inputs:** `source_files`, `session_id`  
-**Outputs:** `intermediate_catalog`, `stage = "READY"`
-
-**Logic:**
-- For each file, detect format from extension (`.csv` → pandas `read_csv`, `.json` → pandas `read_json` with orient auto-detection).
-- Compute per column: `inferred_type`, `null_pct`, `distinct_count`, `sample_values` (up to 5 non-null values).
-- Append a `profiling_progress` event to `state["events"]` after each file.
-- No LLM call; pure pandas computation.
-- Samples up to `PROFILER_SAMPLE_ROWS` rows (default 1000).
-
----
-
-### 6.3 DDLParserAgent
-
-**File:** `agents/ddl_parser.py`  
-**Responsibility:** Parse the SQL DDL string into a structured target schema.
-
-**Inputs:** `ddl_content`  
-**Outputs:** `target_tables`, `stage = "MAPPING"`
-
-**Logic:**
-- Parse DDL with `sqlglot` (no LLM required for well-formed DDL).
-- Extract table names, column names, SQL types, `NOT NULL` constraints, `PRIMARY KEY` markers, and inline `REFERENCES` foreign keys.
-- If `sqlglot` fails to parse, fall back to an LLM call (`get_model_name(fast=True)`) to extract the schema as structured JSON.
-- Emit a `ddl_parsed` event listing all tables and column counts.
-
----
-
-### 6.4 TableSelectionNode *(interrupt point)*
-
-**File:** `agents/table_selection.py`  
-**Responsibility:** Pause the graph so the user can choose which tables from the DDL to include in this migration run.
-
-**Mechanism:** `interrupt_before=["table_selection"]`. The browser shows the full list of parsed tables as a multi-select. When the user submits, `POST /sessions/{id}/select-tables` calls `_do_mapping_and_enqueue()` which runs `mapping_inference_agent` directly (bypassing the graph resume) with `state["selected_tables"]` populated.
-
-**No LLM call.** The node itself just sets `stage = "MAPPING"`.
-
----
-
-### 6.5 MappingInferenceAgent
-
-**File:** `agents/mapping_inference.py`  
-**Responsibility:** Call the LLM to propose a mapping from the intermediate catalog to the **selected** target tables only.
-
-**Inputs:** `intermediate_catalog`, `target_tables`, `selected_tables`  
-**Outputs:** `proposed_mappings`, `stage = "REVIEWING"`
-
-**Logic:**
-- Filter `target_tables` to only the selected ones.
-- Build a prompt with the filtered schema JSON and the full source column catalog.
-- Call the LLM via `get_llm_client()` / `get_model_name()` (provider-agnostic).
-- Parse the JSON array response into `MappingItem` objects with stable UUIDs.
-- Retry once on `JSONDecodeError`.
-- Emit a `mapping_ready` event.
-
-**Prompt rules enforced:**
-- `confidence` is a float 0.0–1.0
-- If no source maps, `source_file` and `source_column` are null, `confidence` is 0.0
-- FK columns map to the same source as the PK in the referenced table
-- `transformation` is null unless a concat or cast is needed
-
----
-
-### 6.6 HumanReviewNode *(interrupt point)*
-
-**File:** `agents/human_review.py`  
-**Responsibility:** Pause the graph before migration; the user reviews and edits proposed mappings.
-
-**Mechanism:** `interrupt_before=["human_review"]`. When `POST /sessions/{id}/confirm` arrives, `_do_migrate_and_enqueue()` runs `data_migration_agent` directly with confirmed mappings and updates the graph state.
-
-**No LLM call.** The node sets `stage = "MIGRATING"`.
-
----
-
-### 6.7 DataMigrationAgent
-
-**File:** `agents/data_migration.py`  
-**Responsibility:** Create SQLite target tables, transform source columns, insert rows, validate, and save a report. Writes to both the session DB and the shared project DB.
-
-**Inputs:** `confirmed_mappings`, `source_files`, `target_tables`, `selected_tables`, `ddl_content`  
-**Outputs:** `rows_loaded`, `validation_results`, `stage = "DONE"`
-
-**Logic:**
-1. **Session DB** (`data/uploads/<id>/migration.db`): Drop + recreate tables from DDL verbatim (`executescript(ddl)`), then insert all rows. `recreate=True`, `replace=False`.
-2. **Project DB** (`data/database/project.db`): Use `CREATE TABLE IF NOT EXISTS` (no drop), then `INSERT OR REPLACE` on PK conflicts. `recreate=False`, `replace=True`.
-3. For each selected table × source file:
-   - Load source into a DataFrame via `_load_source_file()`.
-   - Apply confirmed mappings via `_apply_mappings()` — renames columns, evaluates `transformation` expressions via `df.eval()`.
-   - Use savepoints for per-file rollback safety.
-   - Emit a `migration_progress` SSE event per file.
-4. Validate via `validate_db()`: `PRAGMA foreign_key_check` + null counts on NOT NULL columns.
-5. Save `report.json` to the session directory.
-6. Emit a `done` event with total row count.
-
----
-
-## 7. Graph Wiring
-
-```python
-builder = StateGraph(MigrationState)
-
-builder.add_node("file_profiler",     file_profiler_agent)
-builder.add_node("ddl_parser",        ddl_parser_agent)
-builder.add_node("table_selection",   table_selection_node)
-builder.add_node("mapping_inference", mapping_inference_agent)
-builder.add_node("human_review",      human_review_node)
-builder.add_node("data_migration",    data_migration_agent)
-
-builder.set_entry_point("file_profiler")
-builder.add_edge("file_profiler",     "ddl_parser")
-builder.add_edge("ddl_parser",        "table_selection")
-builder.add_edge("table_selection",   "mapping_inference")
-builder.add_edge("mapping_inference", "human_review")
-builder.add_edge("human_review",      "data_migration")
-builder.add_edge("data_migration",    END)
-
-compiled = builder.compile(
-    checkpointer=SqliteSaver(conn),
-    interrupt_before=["table_selection", "human_review"],
-)
+```text
+file_profiler
+  -> conditional:
+       schema_mode=generate -> schema_generation -> schema_review -> ddl_parser
+       schema_mode=upload/project -> ddl_parser
+  -> table_selection
+  -> mapping_inference
+  -> human_review
+  -> data_migration
 ```
 
-Each session gets a unique `thread_id`. FastAPI passes `{"configurable": {"thread_id": session_id}}` on every `graph.stream()` / `graph.get_state()` / `graph.update_state()` call.
+Interrupt points:
+
+- `schema_review` for generated schemas
+- `table_selection`
+- `human_review`
+
+Some transitions are handled directly by FastAPI helper functions instead of full graph resume to avoid stale SSE event replay.
 
 ---
 
-## 8. FastAPI API Design
+## 6. API Design
 
-### Endpoints
-
-| Method | Path | Description |
+| Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/sessions` | Create session; return `{session_id}` |
-| `POST` | `/sessions/{id}/upload` | Upload files (multipart); save to `data/uploads/{session_id}/` |
-| `POST` | `/sessions/{id}/start` | Trigger graph execution; returns immediately; progress via SSE |
-| `GET` | `/sessions/{id}/events` | SSE stream — pushes `{type, payload}` events as graph advances |
-| `GET` | `/sessions/{id}/schema` | Return parsed `target_tables` + current `selected_tables` |
-| `GET` | `/sessions/{id}/catalog` | Return `intermediate_catalog` (all profiled source columns) |
-| `POST` | `/sessions/{id}/select-tables` | Set selected tables and trigger mapping inference |
-| `GET` | `/sessions/{id}/mappings` | Return current `proposed_mappings` |
-| `PUT` | `/sessions/{id}/mappings/{id}` | Edit a single mapping row |
-| `POST` | `/sessions/{id}/confirm` | Run migration with confirmed mappings |
-| `POST` | `/sessions/{id}/remigrate` | Re-run migration with updated mappings (from Done panel) |
-| `GET` | `/sessions/{id}/validate` | Re-run FK/NULL validation on existing session DB |
-| `GET` | `/sessions/{id}/result` | Return `{rows_loaded, stage, validation_results, error}` |
-| `GET` | `/sessions/{id}/download/db` | Stream session `migration.db` as binary download |
-| `GET` | `/sessions/{id}/download/report` | Stream `report.json` as download |
-| `POST` | `/sessions/{id}/reset` | Delete session uploads and SSE queue |
+| `GET` | `/` | Serve UI |
+| `POST` | `/sessions` | Create session and upload folder |
+| `POST` | `/sessions/{id}/upload` | Upload source/schema files |
+| `POST` | `/sessions/{id}/start?schema_mode=...` | Start profiling/schema flow |
+| `GET` | `/sessions/{id}/events` | SSE progress stream |
+| `GET` | `/sessions/{id}/schema-draft` | Return current DDL draft |
+| `POST` | `/sessions/{id}/schema-feedback` | Refine DDL using user feedback |
+| `POST` | `/sessions/{id}/confirm-schema` | Validate/parse edited DDL |
+| `GET` | `/sessions/{id}/schema` | Return parsed target schema |
+| `GET` | `/sessions/{id}/catalog` | Return source profile catalog |
+| `POST` | `/sessions/{id}/select-tables` | Select target tables and infer mappings |
+| `GET` | `/sessions/{id}/mappings` | Return proposed mappings |
+| `PUT` | `/sessions/{id}/mappings/{mapping_id}` | Edit one mapping |
+| `POST` | `/sessions/{id}/confirm` | Run migration |
+| `POST` | `/sessions/{id}/remigrate` | Rerun migration after editing mappings |
+| `GET` | `/sessions/{id}/validate` | Validate session DB |
+| `GET` | `/sessions/{id}/result` | Return migration result summary |
+| `GET` | `/sessions/{id}/download/db` | Download `migration.db` |
+| `GET` | `/sessions/{id}/download/report` | Download `report.json` |
+| `GET` | `/sessions/{id}/download/schema` | Download current session schema |
+| `GET` | `/database/download/schema` | Download `project.db` schema |
+| `POST` | `/sessions/{id}/reset` | Delete session upload folder |
 
 ### SSE Event Types
 
-```jsonc
-{"type": "profiling_progress",  "payload": {"file": "eu.csv",     "columns": 8}}
-{"type": "ddl_parsed",          "payload": {"tables": [{"name": "customers", "columns": 5}, ...]}}
-{"type": "mapping_ready",       "payload": {"mappings": [...]}}
-{"type": "migration_progress",  "payload": {"table": "customers", "file": "eu.csv", "rows": 200}}
-{"type": "migration_progress",  "payload": {"table": "addresses", "file": "eu.csv", "rows": 0, "skipped": true, "reason": "..."}}
-{"type": "done",                "payload": {"total_rows": 900}}
-{"type": "error",               "payload": {"message": "..."}}
+```json
+{"type": "profiling_progress", "payload": {"file": "source.csv", "columns": 6}}
+{"type": "schema_generated", "payload": {"source": "llm", "ddl": "..."}}
+{"type": "ddl_parsed", "payload": {"tables": [{"name": "customer", "columns": 5}]}}
+{"type": "mapping_ready", "payload": {"mappings": []}}
+{"type": "migration_progress", "payload": {"table": "customer", "file": "source.csv", "rows": 100}}
+{"type": "done", "payload": {"total_rows": 100}}
+{"type": "error", "payload": {"message": "..."}}
 {"type": "stream_end"}
 ```
 
 ---
 
-## 9. Database Strategy
+## 7. Data and Storage
 
-### Two Databases per Migration
+### Session Upload Folder
 
-| Database | Path | Lifecycle | Insert strategy |
-|---|---|---|---|
-| Session DB | `data/uploads/<id>/migration.db` | Recreated each run (DROP + CREATE) | `INSERT` |
-| Project DB | `data/database/project.db` | Persistent across all sessions | `INSERT OR REPLACE` on PK |
+Path:
 
-The session DB gives a clean snapshot of this exact migration. The project DB accumulates data across all sessions — repeated primary keys are overwritten by the latest run.
-
-### Inspecting Data
-
-```powershell
-# SQLite CLI
-sqlite3 data/database/project.db ".tables"
-sqlite3 data/database/project.db < data/database/scripts/select_all.sql
-
-# Python runner (no sqlite3 CLI required)
-.\\venv\\Scripts\\python.exe data/database/run_sql.py data/database/scripts/table_counts.sql
-.\\venv\\Scripts\\python.exe data/database/run_sql.py data/database/scripts/table_counts.sql --db data/uploads/<id>/migration.db
+```text
+data/uploads/<session-id>/
 ```
 
-### Included SQL Scripts
+Contents:
+
+```text
+<source files>
+target_schema.sql          # only if uploaded by user
+migration.db               # created after migration
+report.json                # created after migration
+```
+
+The terminal logs the session folder:
+
+```text
+[SESSION] created id=<uuid> upload_dir=C:\...\data\uploads\<uuid>
+[SESSION] upload id=<uuid> upload_dir=C:\...\data\uploads\<uuid> files=[...]
+[SESSION] start id=<uuid> schema_mode=project upload_dir=C:\...\data\uploads\<uuid>
+```
+
+### Database Behavior
+
+| DB | Path | Lifecycle | Insert behavior |
+|---|---|---|---|
+| Session DB | `data/uploads/<session-id>/migration.db` | Recreated per run | `INSERT` |
+| Project DB | `data/database/project.db` | Persistent | `INSERT OR REPLACE` |
+| Checkpoint DB | `data/checkpoints.db` | Persistent graph state | LangGraph-managed |
+
+There are no DB credentials because SQLite uses local files.
+
+---
+
+## 8. Agent Responsibilities
+
+### `agents/data_io.py`
+
+Shared CSV/JSON loader. Handles normal JSON, JSONL, nested JSON flattening, BOM-tolerant UTF-8, and display serialization for dict/list values.
+
+### `agents/file_profiler.py`
+
+Builds source catalog from uploaded files. No LLM call.
+
+### `agents/schema_generation.py`
+
+Generates SQLite DDL from source profiles. Supports user feedback refinement. Falls back to a conservative file/table-based schema when LLM is unavailable.
+
+### `agents/ddl_parser.py`
+
+Parses DDL using `sqlglot`, extracts:
+
+- tables
+- columns
+- SQL types
+- nullable flags
+- primary keys
+- inline and table-level foreign keys
+
+Then validates the DDL in SQLite and checks FK references.
+
+### `agents/mapping_inference.py`
+
+Uses LLM to infer mappings. Sanitizes invented source columns. Allows synthetic integer primary keys to stay unmapped.
+
+### `agents/data_migration.py`
+
+Loads transformed data into session DB and project DB, validates, emits progress, and writes `report.json`.
+
+---
+
+## 9. Database Scripts
+
+Location:
+
+```text
+data/database/scripts/
+```
 
 | Script | Purpose |
 |---|---|
-| `scripts/select_all.sql` | SELECT * from all tables |
-| `scripts/table_counts.sql` | Row count per table |
-| `scripts/delete_all_data.sql` | DELETE all rows (keeps schema) |
-| `scripts/drop_all_tables.sql` | DROP all tables |
+| `table_counts.sql` | Count rows |
+| `select_all.sql` | Select data |
+| `delete_all_data.sql` | Delete rows, keep schema |
+| `drop_all_tables.sql` | Drop schema |
 
----
+Run with:
 
-## 10. Environment Variables Reference
-
-### Azure AI Foundry
-
-| Variable | Required | Description |
-|---|---|---|
-| `LLM_PROVIDER` | Yes | Set to `azure` |
-| `AZURE_OPENAI_ENDPOINT` | Yes | e.g. `https://<resource>.openai.azure.com/openai/v1/` |
-| `AZURE_OPENAI_API_KEY` | Yes | Azure API key |
-| `AZURE_OPENAI_DEPLOYMENT` | Yes | Deployment name for mapping inference (e.g. `gpt-4.1`) |
-| `AZURE_OPENAI_DEPLOYMENT_FAST` | Yes | Deployment name for DDL parsing fallback |
-
-### Ollama (local)
-
-| Variable | Default | Description |
-|---|---|---|
-| `LLM_PROVIDER` | `ollama` | Set to `ollama` (or omit) |
-| `LLM_BASE_URL` | `http://localhost:11434/v1` | Ollama endpoint |
-| `LLM_MODEL` | — | Model for mapping inference (e.g. `qwen2.5:7b`) |
-| `LLM_MODEL_FAST` | — | Model for DDL parsing fallback (e.g. `qwen3.5:4b`) |
-| `LLM_API_KEY` | `ollama` | Ignored by Ollama but required by the SDK |
-
-### Storage
-
-| Variable | Default | Description |
-|---|---|---|
-| `UPLOAD_DIR` | `data/uploads` | Session upload root |
-| `CHECKPOINT_DB` | `data/checkpoints.db` | LangGraph SqliteSaver |
-| `MIGRATION_DB` | `data/database/project.db` | Shared project database |
-| `PROFILER_SAMPLE_ROWS` | `1000` | Max rows profiled per file (0 = all) |
-
----
-
-## 11. Technology Stack
-
-| Layer | Technology | Notes |
-|---|---|---|
-| Agent orchestration | **LangGraph** ≥ 1.2 | `StateGraph`, `SqliteSaver`, `interrupt_before` |
-| LLM inference | **Azure AI Foundry** (default) | OpenAI-compatible `/openai/v1/` endpoint; `gpt-4.1` deployments |
-| LLM inference (alt) | **Ollama** + OpenAI Python SDK | Local; no API key required |
-| LLM client factory | `llm_client.py` | Provider-agnostic; reads `LLM_PROVIDER` env var |
-| HTTP server | **FastAPI** + `uvicorn` | SSE via `StreamingResponse` + async generator |
-| Data profiling | **pandas** | CSV + JSON support |
-| DDL parsing | **sqlglot** | Pure Python SQL parser; LLM fallback |
-| Target database | **SQLite** (via Python `sqlite3`) | Session DB + project DB |
-| Checkpoint database | **SQLite** (`SqliteSaver`) | Separate `checkpoints.db` |
-| UI | Plain HTML + CSS + vanilla JS | Single file; no build step |
-| Auth (Azure) | **azure-identity** | Installed; API key auth used currently |
-
----
-
-## 12. Project Structure
-
-```
-DBMapper/
-├── main.py                  # FastAPI app — all routes, SSE, session management
-├── graph.py                 # LangGraph StateGraph (6 nodes, 2 interrupt points)
-├── models.py                # MigrationState TypedDict + supporting TypedDicts
-├── llm_client.py            # LLM client factory — Azure AI Foundry or Ollama
-├── agents/
-│   ├── file_profiler.py     # Pandas column profiling — no LLM
-│   ├── ddl_parser.py        # sqlglot DDL parsing + LLM fallback
-│   ├── table_selection.py   # Interrupt node — user picks tables
-│   ├── mapping_inference.py # LLM mapping inference (selected tables only)
-│   ├── human_review.py      # Interrupt node — user reviews mappings
-│   └── data_migration.py    # SQLite ETL — session DB + project DB
-├── static/
-│   └── index.html           # Single-page UI (vanilla JS)
-├── data/
-│   ├── raw/                 # Sample test files
-│   ├── uploads/             # Per-session: source files + migration.db + report.json
-│   └── database/
-│       ├── project.db       # Shared persistent SQLite database
-│       ├── run_sql.py       # Python CLI runner for SQL scripts
-│       └── scripts/         # Utility SQL: select_all, table_counts, delete, drop
-├── requirements.txt
-├── pyproject.toml
-└── .env
+```powershell
+.\venv\Scripts\python.exe data/database/run_sql.py data/database/scripts/table_counts.sql
+.\venv\Scripts\python.exe data/database/run_sql.py table_counts.sql --db project.db
+.\venv\Scripts\python.exe data/database/run_sql.py table_counts.sql --db data/uploads/<session-id>/migration.db
 ```
 
 ---
 
-## 13. Functional Requirements
+## 10. Environment Variables
+
+| Variable | Description |
+|---|---|
+| `LLM_PROVIDER` | `azure` or `ollama` |
+| `AZURE_OPENAI_ENDPOINT` | Azure OpenAI-compatible endpoint |
+| `AZURE_OPENAI_API_KEY` | Azure API key |
+| `AZURE_OPENAI_DEPLOYMENT` | Main model deployment |
+| `AZURE_OPENAI_DEPLOYMENT_FAST` | Fast/fallback model deployment |
+| `LLM_BASE_URL` | Ollama/OpenAI-compatible URL |
+| `LLM_MODEL` | Main Ollama model |
+| `LLM_MODEL_FAST` | Fast Ollama model |
+| `LLM_API_KEY` | API key value for OpenAI SDK |
+| `UPLOAD_DIR` | Upload root, default `data/uploads` |
+| `CHECKPOINT_DB` | LangGraph checkpoint DB |
+| `MIGRATION_DB` | Project DB path |
+| `PROFILER_SAMPLE_ROWS` | Max rows sampled by profiler |
+
+---
+
+## 11. Functional Requirements
 
 | ID | Requirement |
 |---|---|
-| FR-01 | The system MUST accept 1 to N `.csv` or `.json` files per session |
-| FR-02 | Exactly one `.sql` DDL file MUST be uploaded per session |
-| FR-03 | All source files MUST be profiled before the LLM mapping call is made |
-| FR-04 | The user MUST be able to select a subset of DDL tables before mapping inference runs |
-| FR-05 | Mapping inference MUST run only against the selected tables |
-| FR-06 | The DDL parser MUST fall back to an LLM call if `sqlglot` fails |
-| FR-07 | The MappingInferenceAgent MUST produce exactly one `MappingItem` per column per selected table |
-| FR-08 | The graph MUST pause at `table_selection` and `human_review` before executing those nodes |
-| FR-09 | The user MUST be able to change source file, source column, and transformation for any mapping |
-| FR-10 | "Confirm & Migrate" MUST be disabled until all NOT NULL / PK columns have a source assigned |
-| FR-11 | Migration MUST write to both the session DB (full recreate) and the project DB (INSERT OR REPLACE) |
-| FR-12 | The session `migration.db` and `report.json` MUST be downloadable from the UI |
-| FR-13 | Switching between Azure AI Foundry and Ollama MUST require only `.env` changes |
-| FR-14 | The SSE stream MUST emit at least one event per file during profiling and one per table/file during migration |
+| FR-01 | System must accept one or more CSV/JSON source files |
+| FR-02 | System must support uploaded, generated, and project DB schema modes |
+| FR-03 | Generated schemas must be editable before mapping |
+| FR-04 | User must be able to refine generated schema with feedback |
+| FR-05 | Schema must be validated before table selection |
+| FR-06 | User must be able to select target tables |
+| FR-07 | Mapping inference must only run for selected tables |
+| FR-08 | User must be able to edit mappings |
+| FR-09 | Confirm action must show reasons when required mappings are missing |
+| FR-10 | Auto-generated integer primary keys may be skipped |
+| FR-11 | Session DB and project DB must both be written |
+| FR-12 | DB, report, and schema must be downloadable |
+| FR-13 | Terminal must log active session upload folder |
+| FR-14 | ERD must show tables, FK lines, and cardinality |
 
 ---
 
-## 14. Non-Functional Requirements
+## 12. Open Questions / Future Work
 
-| ID | Requirement |
-|---|---|
-| NFR-01 | Profiling a 10 MB CSV MUST complete in < 10 s on a standard laptop |
-| NFR-02 | End-to-end latency (upload to mapping table displayed) MUST be < 60 s for a 3-file, 50 MB input |
-| NFR-03 | The server MUST support at least 5 concurrent sessions without state leakage |
-| NFR-04 | A server restart MUST allow an in-progress session to resume from the last completed graph node |
-| NFR-05 | All uploaded files MUST be stored only within the session directory; path traversal MUST return HTTP 400 |
-| NFR-06 | The UI MUST work in current Chrome, Firefox, and Safari without build tools |
-
----
-
-## 15. Open Questions
-
-1. **Entra ID auth:** Currently using API key auth for Azure AI Foundry. Should we add `DefaultAzureCredential` support via `azure-identity` for production/managed-identity scenarios?
-
-2. **Transformation expressions:** `df.eval()` handles simple column renames and basic arithmetic. Should a future version support richer expressions (e.g. Jinja2 templates, Python lambdas)?
-
-3. **Duplicate rows across files:** If two source files share the same primary-key values, the current behaviour is to insert both (session DB) or replace (project DB). Should there be a de-duplication pass?
-
-4. **Large file strategy:** pandas loads entire files into memory. At what file size should chunked insertion be enabled?
-
-5. **Session TTL:** How long should uploaded files and checkpoints be retained? Should a cleanup job run on server startup?
-
----
-
-*Updated 2026-06-25 — v1.2*
+1. Add lookup-stage migration for synthetic parent IDs and child FKs.
+2. Add chunked loading for large files.
+3. Add session cleanup / TTL.
+4. Add richer transformation expressions beyond simple `df.eval`.
+5. Add authentication if deployed outside local development.
