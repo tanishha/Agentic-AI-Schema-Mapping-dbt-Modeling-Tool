@@ -47,3 +47,5 @@ Thumbs.db
 .ipynb_checkpoints/
 
 generation.py
+
+MIGRATION_PRD.md
