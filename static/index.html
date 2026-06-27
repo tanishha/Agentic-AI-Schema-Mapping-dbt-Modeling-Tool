@@ -8,17 +8,18 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg:        #0f1117;
-  --surface:   #1a1d27;
-  --surface2:  #22263a;
-  --border:    #2e3147;
-  --accent:    #6c63ff;
-  --accent-dim:#3d3a6e;
-  --text:      #e2e4f0;
-  --muted:     #7b7fa6;
-  --green:     #22c55e;
-  --amber:     #f59e0b;
-  --red:       #ef4444;
+  --bg:        #f6f8fb;
+  --surface:   #ffffff;
+  --surface2:  #eef2f7;
+  --border:    #d7dde7;
+  --accent:    #2563eb;
+  --accent-dim:#dbeafe;
+  --text:      #101828;
+  --muted:     #344054;
+  --green:     #16845b;
+  --amber:     #b7791f;
+  --red:       #c2413f;
+  --code-bg:   #f9fafb;
   --radius:    8px;
 }
 
@@ -36,7 +37,7 @@ body {
 
 header { width: 100%; max-width: 960px; margin-bottom: 24px; }
 header h1 { font-size: 22px; font-weight: 700; }
-header p  { color: var(--muted); font-size: 13px; margin-top: 4px; }
+header p  { color: #1f2937; font-size: 13px; margin-top: 4px; }
 
 /* Step indicator */
 .steps {
@@ -53,12 +54,12 @@ header p  { color: var(--muted); font-size: 13px; margin-top: 4px; }
   padding: 10px 14px;
   font-size: 12px;
   font-weight: 500;
-  color: var(--muted);
+  color: #344054;
   border-right: 1px solid var(--border);
   display: flex; align-items: center; gap: 8px;
 }
 .step:last-child { border-right: none; }
-.step.active { background: var(--accent-dim); color: var(--text); }
+.step.active { background: var(--accent-dim); color: #1d4ed8; }
 .step.done   { color: var(--green); }
 .step-num {
   width: 20px; height: 20px;
@@ -69,6 +70,8 @@ header p  { color: var(--muted); font-size: 13px; margin-top: 4px; }
 }
 .step.active .step-num { background: var(--accent); color: #fff; }
 .step.done   .step-num { background: var(--green);  color: #fff; }
+.step-dbt { flex: 0 0 130px; justify-content: center; }
+.step-dbt.active { background: var(--accent-dim); color: #1d4ed8; }
 
 /* Cards */
 .card {
@@ -80,7 +83,7 @@ header p  { color: var(--muted); font-size: 13px; margin-top: 4px; }
 }
 .card + .card { margin-top: 16px; }
 .card h2 { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
-.card h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.card h3 { font-size: 14px; font-weight: 700; margin-bottom: 12px; color: #344054; text-transform: uppercase; letter-spacing: 0.5px; }
 
 /* Drop zone */
 .dropzone {
@@ -93,9 +96,9 @@ header p  { color: var(--muted); font-size: 13px; margin-top: 4px; }
 }
 .dropzone:hover, .dropzone.dragover {
   border-color: var(--accent);
-  background: rgba(108,99,255,.06);
+  background: rgba(37,99,235,.06);
 }
-.dropzone p    { color: var(--muted); font-size: 13px; margin-top: 6px; }
+.dropzone p    { color: #344054; font-size: 13px; margin-top: 6px; }
 .dropzone .icon{ font-size: 28px; }
 
 .schema-mode {
@@ -116,7 +119,7 @@ header p  { color: var(--muted); font-size: 13px; margin-top: 4px; }
 }
 .schema-mode input { margin-top: 3px; accent-color: var(--accent); }
 .schema-mode strong { display: block; font-size: 13px; color: var(--text); }
-.schema-mode span { display: block; color: var(--muted); font-size: 12px; margin-top: 3px; line-height: 1.35; }
+.schema-mode span { display: block; color: #344054; font-size: 12px; margin-top: 3px; line-height: 1.35; }
 .schema-draft { margin-top: 16px; }
 .schema-draft textarea {
   width: 100%;
@@ -131,7 +134,7 @@ header p  { color: var(--muted); font-size: 13px; margin-top: 4px; }
   font-size: 12px;
   line-height: 1.45;
 }
-.schema-draft-note { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+.schema-draft-note { color: #344054; font-size: 12px; margin-bottom: 10px; }
 .schema-chat {
   margin-top: 12px;
   border: 1px solid var(--border);
@@ -155,7 +158,7 @@ header p  { color: var(--muted); font-size: 13px; margin-top: 4px; }
   padding-left: 8px;
 }
 .schema-chat-msg.user { border-left-color: var(--accent); }
-.schema-chat-msg.assistant { border-left-color: var(--green); color: var(--muted); }
+.schema-chat-msg.assistant { border-left-color: var(--green); color: #344054; }
 .schema-chat textarea {
   width: 100%;
   min-height: 72px;
@@ -196,11 +199,11 @@ header p  { color: var(--muted); font-size: 13px; margin-top: 4px; }
 }
 .raw-table-item:last-child { border-bottom: none; padding-bottom: 0; }
 .raw-table-item code { color: var(--accent); }
-.raw-table-item span { color: var(--muted); }
+.raw-table-item span { color: #344054; }
 .raw-table-item .table-db { text-align: left; }
 .raw-table-item .table-rows,
 .raw-table-item .table-cols { text-align: right; white-space: nowrap; }
-.dbt-empty { color: var(--muted); font-size: 13px; }
+.dbt-empty { color: #344054; font-size: 13px; }
 .dbt-status {
   margin-top: 14px;
   color: var(--green);
@@ -217,7 +220,7 @@ header p  { color: var(--muted); font-size: 13px; margin-top: 4px; }
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 12px 14px;
-  color: var(--muted);
+  color: #344054;
   font-size: 13px;
   line-height: 1.45;
 }
@@ -237,7 +240,7 @@ header p  { color: var(--muted); font-size: 13px; margin-top: 4px; }
   grid-template-columns: 90px minmax(0, 1fr);
   gap: 10px;
   align-items: center;
-  color: var(--muted);
+  color: #344054;
   font-size: 12px;
 }
 .dbt-change-action {
@@ -250,9 +253,9 @@ header p  { color: var(--muted); font-size: 13px; margin-top: 4px; }
   font-size: 10px;
   font-weight: 700;
 }
-.dbt-change-action.create { color: var(--green); border-color: rgba(34,197,94,.35); }
-.dbt-change-action.update { color: var(--amber); border-color: rgba(245,158,11,.35); }
-.dbt-change-action.preserve { color: var(--muted); }
+.dbt-change-action.create { color: var(--green); border-color: rgba(22,132,91,.28); }
+.dbt-change-action.update { color: var(--amber); border-color: rgba(183,121,31,.28); }
+.dbt-change-action.preserve { color: #344054; }
 .dbt-file-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -261,7 +264,7 @@ header p  { color: var(--muted); font-size: 13px; margin-top: 4px; }
 }
 .dbt-file-tab {
   background: var(--bg);
-  color: var(--muted);
+  color: #344054;
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 6px 9px;
@@ -274,7 +277,7 @@ header p  { color: var(--muted); font-size: 13px; margin-top: 4px; }
 }
 .dbt-file-view {
   margin-top: 10px;
-  background: #080a10;
+  background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 12px;
@@ -294,7 +297,7 @@ header p  { color: var(--muted); font-size: 13px; margin-top: 4px; }
 }
 .dbt-example {
   background: var(--surface);
-  color: var(--muted);
+  color: #344054;
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 6px 9px;
@@ -303,7 +306,7 @@ header p  { color: var(--muted); font-size: 13px; margin-top: 4px; }
 }
 .dbt-output {
   margin-top: 14px;
-  background: #080a10;
+  background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 12px;
@@ -331,8 +334,8 @@ header p  { color: var(--muted); font-size: 13px; margin-top: 4px; }
   padding: 2px 6px; border-radius: 4px;
   text-transform: uppercase; letter-spacing: .5px;
 }
-.badge-data { background: rgba(108,99,255,.2); color: var(--accent); }
-.badge-ddl  { background: rgba(34,197,94,.15);  color: var(--green); }
+.badge-data { background: rgba(37,99,235,.10); color: var(--accent); }
+.badge-ddl  { background: rgba(22,132,91,.12);  color: var(--green); }
 
 /* Buttons */
 .btn {
@@ -344,14 +347,14 @@ header p  { color: var(--muted); font-size: 13px; margin-top: 4px; }
 }
 .btn:disabled { opacity: .38; cursor: not-allowed; }
 .btn-primary   { background: var(--accent); color: #fff; }
-.btn-primary:hover:not(:disabled)   { background: #7c73ff; }
+.btn-primary:hover:not(:disabled)   { background: #1d4ed8; }
 .btn-secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
 .btn-secondary:hover:not(:disabled) { border-color: var(--accent); }
-.btn-ghost     { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+.btn-ghost     { background: transparent; color: #344054; border: 1px solid var(--border); }
 .btn-ghost:hover:not(:disabled)     { color: var(--text); }
-.btn-danger    { background: rgba(239,68,68,.15); color: var(--red); border: 1px solid rgba(239,68,68,.3); }
-.btn-remove { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 16px; padding: 2px 4px; border-radius: 4px; }
-.btn-remove:hover { color: var(--red); background: rgba(239,68,68,.1); }
+.btn-danger    { background: rgba(194,65,63,.10); color: var(--red); border: 1px solid rgba(194,65,63,.25); }
+.btn-remove { background: none; border: none; color: #344054; cursor: pointer; font-size: 16px; padding: 2px 4px; border-radius: 4px; }
+.btn-remove:hover { color: var(--red); background: rgba(194,65,63,.10); }
 
 .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; flex-wrap: wrap; }
 
@@ -395,13 +398,13 @@ header p  { color: var(--muted); font-size: 13px; margin-top: 4px; }
 .table-nav-label {
   flex: 1; font-weight: 600; font-size: 14px;
 }
-.table-nav-sub { color: var(--muted); font-size: 12px; }
+.table-nav-sub { color: #344054; font-size: 12px; }
 
 /* Table schema info chips */
 .col-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
 .col-chip {
   font-size: 11px; padding: 3px 8px; border-radius: 12px;
-  border: 1px solid var(--border); color: var(--muted);
+  border: 1px solid var(--border); color: #344054;
   display: flex; align-items: center; gap: 4px;
 }
 .col-chip.pk  { border-color: var(--amber); color: var(--amber); }
@@ -424,19 +427,19 @@ header p  { color: var(--muted); font-size: 13px; margin-top: 4px; }
   padding: 8px 10px;
 }
 .table-choice input { accent-color: var(--accent); }
-.table-choice small { color: var(--muted); margin-left: auto; }
+.table-choice small { color: #344054; margin-left: auto; }
 
 /* Mapping table */
 .mapping-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th {
   text-align: left; padding: 8px 10px;
-  color: var(--muted); font-weight: 500;
+  color: #344054; font-weight: 600;
   border-bottom: 1px solid var(--border); white-space: nowrap;
 }
 td { padding: 6px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
 tr:last-child td { border-bottom: none; }
-tr:hover td { background: rgba(255,255,255,.02); }
+tr:hover td { background: rgba(37,99,235,.04); }
 
 select.inline-select {
   background: var(--bg); color: var(--text);
@@ -453,7 +456,7 @@ select.inline-select:focus { outline: none; border-color: var(--accent); }
 .conf-high { background: var(--green); }
 .conf-mid  { background: var(--amber); }
 .conf-low  { background: var(--red);   }
-.conf-pct  { font-size: 11px; color: var(--muted); white-space: nowrap; width: 30px; text-align: right; }
+.conf-pct  { font-size: 11px; color: #344054; white-space: nowrap; width: 30px; text-align: right; }
 
 /* Validation results */
 .validation-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
@@ -465,16 +468,16 @@ select.inline-select:focus { outline: none; border-color: var(--accent); }
 .val-card.warning { border-left: 3px solid var(--amber); }
 .val-card.error   { border-left: 3px solid var(--red);   }
 .val-table-name { font-weight: 600; font-size: 14px; margin-bottom: 8px; }
-.val-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 4px; }
+.val-row { display: flex; justify-content: space-between; font-size: 12px; color: #344054; margin-top: 4px; }
 .val-row span:last-child { color: var(--text); font-weight: 500; }
 .val-badge {
   display: inline-block; font-size: 10px; font-weight: 700;
   padding: 2px 7px; border-radius: 10px; margin-top: 8px;
   text-transform: uppercase; letter-spacing: .5px;
 }
-.val-badge.ok      { background: rgba(34,197,94,.15);  color: var(--green); }
-.val-badge.warning { background: rgba(245,158,11,.15); color: var(--amber); }
-.val-badge.error   { background: rgba(239,68,68,.15);  color: var(--red);   }
+.val-badge.ok      { background: rgba(22,132,91,.12);  color: var(--green); }
+.val-badge.warning { background: rgba(183,121,31,.12); color: var(--amber); }
+.val-badge.error   { background: rgba(194,65,63,.10);  color: var(--red);   }
 
 /* ERD */
 .erd-wrap {
@@ -482,12 +485,12 @@ select.inline-select:focus { outline: none; border-color: var(--accent); }
   border-radius: var(--radius); padding: 16px;
   overflow: auto; margin-top: 8px;
 }
-.erd-svg { display: block; background: #0f1117; border-radius: 6px; }
+.erd-svg { display: block; background: var(--surface); border-radius: 6px; }
 
 /* Migration summary table */
 .summary-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .summary-table th, .summary-table td { padding: 7px 12px; border-bottom: 1px solid var(--border); text-align: left; }
-.summary-table th { color: var(--muted); font-weight: 500; }
+.summary-table th { color: #344054; font-weight: 600; }
 .summary-table tr:last-child td { border-bottom: none; }
 .summary-total { font-size: 18px; font-weight: 700; color: var(--green); margin-top: 12px; }
 .summary-table tr.row-error td { color: var(--red); }
@@ -498,12 +501,12 @@ select.inline-select:focus { outline: none; border-color: var(--accent); }
 .download-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
 .table-nav-info { flex: 1; }
 .done-actions { margin-top: 12px; }
-.val-placeholder { color: var(--muted); font-size: 13px; }
+.val-placeholder { color: #344054; font-size: 13px; }
 
 /* Misc */
 .section-sep { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
 .error-banner {
-  background: rgba(239,68,68,.1); border: 1px solid var(--red);
+  background: rgba(194,65,63,.10); border: 1px solid var(--red);
   color: var(--red); border-radius: var(--radius);
   padding: 10px 14px; font-size: 13px; margin-top: 12px;
 }
@@ -514,7 +517,7 @@ select.inline-select:focus { outline: none; border-color: var(--accent); }
 
 <header>
   <h1>DBMapper</h1>
-  <p>Agentic schema migration — CSV &amp; JSON → SQLite</p>
+  <p>Agentic schema migration — CSV → SQLite</p>
 </header>
 
 <div class="steps">
@@ -522,6 +525,7 @@ select.inline-select:focus { outline: none; border-color: var(--accent); }
   <div class="step"        id="step-2"><span class="step-num">2</span> Profiling</div>
   <div class="step"        id="step-3"><span class="step-num">3</span> Review</div>
   <div class="step"        id="step-4"><span class="step-num">4</span> Done</div>
+  <div class="step step-dbt" id="step-dbt">dbt Steps</div>
 </div>
 
 <!-- ── Panel 1: Upload ─────────────────────────────────────────────────── -->
@@ -565,7 +569,7 @@ select.inline-select:focus { outline: none; border-color: var(--accent); }
        aria-label="Drop files or click to browse">
     <div class="icon">📂</div>
     <strong>Drop files here or click to browse</strong>
-    <p>Accept: .csv, .json (data files) and exactly one .sql (DDL)</p>
+    <p>Accept: .csv (data files) and exactly one .sql (DDL)</p>
   </div>
   <input type="file" id="file-input" multiple accept=".csv,.json,.sql" class="hidden">
   <div class="file-list" id="file-list"></div>
@@ -804,15 +808,19 @@ const panels = {
   dbt:       document.getElementById('panel-dbt'),
 };
 const steps = [1,2,3,4].map(i => document.getElementById('step-' + i));
+const dbtStep = document.getElementById('step-dbt');
 
 function showPanel(name, idx) {
   Object.values(panels).forEach(p => p.classList.add('hidden'));
   panels[name].classList.remove('hidden');
+  dbtStep.classList.remove('active', 'done');
   steps.forEach((s, i) => {
     s.classList.remove('active', 'done');
+    if (name === 'dbt') return;
     if (i < idx) s.classList.add('done');
     else if (i === idx) s.classList.add('active');
   });
+  if (name === 'dbt') dbtStep.classList.add('active');
 }
 
 // ── File upload panel ────────────────────────────────────────────────────────
@@ -868,12 +876,12 @@ function renderFileList() {
   const datas = S.files.filter(f => f.type === 'data').length;
   if (uploadHelp) {
     uploadHelp.textContent = S.schemaMode === 'upload'
-      ? 'Accept: .csv, .json (data files) and exactly one .sql (DDL)'
+      ? 'Accept: .csv, (data files) and exactly one .sql (DDL)'
       : S.schemaMode === 'project'
-        ? 'Accept: .csv or .json data files. Schema will be read from data/database/project.db.'
+        ? 'Accept: .csv or data files. Schema will be read from data/database/project.db.'
         : S.schemaMode === 'extend'
-          ? 'Accept: .csv or .json data files. Existing project.db schema will be extended.'
-          : 'Accept: .csv or .json data files. SQL is optional and ignored in generated-schema mode.';
+          ? 'Accept: .csv or data files. Existing project.db schema will be extended.'
+          : 'Accept: .csv or data files. SQL is optional and ignored in generated-schema mode.';
   }
   btnStart.disabled = S.schemaMode === 'upload'
     ? !(ddls === 1 && datas >= 1)
@@ -1647,10 +1655,10 @@ function renderMappingRow(tbody, m, table) {
   const nameSpan = document.createElement('strong');
   nameSpan.textContent = m.target_column;
   tdTarget.appendChild(nameSpan);
-  if (isPk)       tdTarget.appendChild(chip('PK', '#f59e0b', 'rgba(245,158,11,.15)'));
-  if (isAutoGeneratedPrimaryKey(colInfo)) tdTarget.appendChild(chip('AUTO', '#22c55e', 'rgba(34,197,94,.15)'));
-  if (isFk)       tdTarget.appendChild(chip('FK', '#6c63ff', 'rgba(108,99,255,.15)'));
-  if (!colInfo?.nullable && !isPk) tdTarget.appendChild(chip('*', '#ef4444', 'rgba(239,68,68,.1)'));
+  if (isPk)       tdTarget.appendChild(chip('PK', '#b7791f', 'rgba(183,121,31,.14)'));
+  if (isAutoGeneratedPrimaryKey(colInfo)) tdTarget.appendChild(chip('AUTO', '#16845b', 'rgba(22,132,91,.12)'));
+  if (isFk)       tdTarget.appendChild(chip('FK', '#2563eb', 'rgba(37,99,235,.10)'));
+  if (!colInfo?.nullable && !isPk) tdTarget.appendChild(chip('*', '#c2413f', 'rgba(194,65,63,.10)'));
   tr.appendChild(tdTarget);
 
   // SQL type
@@ -1938,7 +1946,7 @@ function renderERD(tables, wrapId) {
     wrap.innerHTML = '<p class="val-placeholder">No schema loaded.</p>'; return;
   }
 
-  const TW = 270, ROW_H = 24, HEAD_H = 36, PAD = 96;
+  const TW = 300, ROW_H = 26, HEAD_H = 38, PAD = 140;
   const COLS = Math.min(tables.length, 3);
 
   // Grid positions
@@ -1969,8 +1977,8 @@ function renderERD(tables, wrapId) {
   const svgH = cumY;
 
   // Hardcoded colors — CSS vars don't work inside SVG fill attributes
-  const C = { surface:'#22263a', border:'#2e3147', accent:'#9aa3ff',
-              text:'#e2e4f0', muted:'#7b7fa6', amber:'#f59e0b' };
+  const C = { surface:'#ffffff', border:'#cbd5e1', accent:'#1d4ed8',
+              text:'#172033', muted:'#475467', amber:'#9a6700' };
 
   // Unique marker ID per wrap to avoid conflicts when two ERDs are in the DOM
   const markerId = 'erd-arr-' + wrapId;
@@ -1980,7 +1988,7 @@ function renderERD(tables, wrapId) {
     </marker>
   </defs>`;
 
-  let arrows = '', boxes = '';
+  let arrows = '', cardinalityLabels = '', boxes = '';
 
   // ── Draw FK relationship arrows FIRST (rendered under table boxes) ──────────
   tables.forEach(t => {
@@ -2000,7 +2008,7 @@ function renderERD(tables, wrapId) {
 
       if (src.col === dst.col) {
         // Same column: route via the right outer edge
-        const outerX = src.x - 42;
+      const outerX = src.x - 70;
         sx = src.x; dx = dst.x;
         path = `M${sx},${sy} L${outerX},${sy} L${outerX},${dy} L${dx},${dy}`;
       } else if (dst.x > src.x) {
@@ -2023,11 +2031,11 @@ function renderERD(tables, wrapId) {
       const oneAnchor = oneOnLeftEdge ? 'end' : 'start';
 
       arrows += `<path d="${path}" fill="none" stroke="${C.accent}"
-        stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"
+        stroke-width="2" stroke-opacity="0.8" stroke-linejoin="round" stroke-linecap="round"
         marker-end="url(#${markerId})"/>`;
-      arrows += `<text x="${nX}" y="${sy - 7}" text-anchor="${nAnchor}" fill="${C.accent}" font-size="11"
+      cardinalityLabels += `<text x="${nX}" y="${sy - 9}" text-anchor="${nAnchor}" fill="${C.accent}" font-size="13"
         font-weight="700" font-family="Inter,system-ui,sans-serif">N</text>
-        <text x="${oneX}" y="${dy - 7}" text-anchor="${oneAnchor}" fill="${C.accent}" font-size="11"
+        <text x="${oneX}" y="${dy - 9}" text-anchor="${oneAnchor}" fill="${C.accent}" font-size="13"
         font-weight="700" font-family="Inter,system-ui,sans-serif">1</text>`;
     });
   });
@@ -2042,11 +2050,11 @@ function renderERD(tables, wrapId) {
       <rect x="${p.x}" y="${p.y}" width="${TW}" height="${p.h}" rx="6"
         fill="${C.surface}" stroke="${C.border}" stroke-width="1.5"/>
       <rect x="${p.x}" y="${p.y}" width="${TW}" height="${HEAD_H}" rx="6"
-        fill="${C.accent}" fill-opacity="0.28" stroke="none"/>
+        fill="#bfdbfe" stroke="none"/>
       <rect x="${p.x}" y="${p.y + HEAD_H - 6}" width="${TW}" height="6"
-        fill="${C.accent}" fill-opacity="0.15"/>
+        fill="${C.accent}" fill-opacity="0.16"/>
       <text x="${p.x + TW / 2}" y="${p.y + HEAD_H - 10}"
-        text-anchor="middle" fill="${C.text}" font-size="13" font-weight="700"
+        text-anchor="middle" fill="${C.text}" font-size="14" font-weight="700"
         font-family="Inter,system-ui,sans-serif">${escXml(t.name)}</text>`;
 
     t.columns.forEach((col, i) => {
@@ -2062,7 +2070,7 @@ function renderERD(tables, wrapId) {
         stroke="${C.border}" stroke-width="0.5"/>`;
 
       // Column name
-      boxes += `<text x="${p.x + 10}" y="${textY}" fill="${color}" font-size="12"
+      boxes += `<text x="${p.x + 10}" y="${textY}" fill="${color}" font-size="13"
         font-family="Inter,system-ui,sans-serif">${escXml(col.name)}</text>`;
 
       // PK/FK badge inline after the name (no coordinate collision with sql_type)
@@ -2077,13 +2085,13 @@ function renderERD(tables, wrapId) {
 
       // SQL type right-aligned (no longer overlaps badge)
       boxes += `<text x="${p.x + TW - 8}" y="${textY}" text-anchor="end" fill="${C.muted}"
-        font-size="10" font-family="Inter,system-ui,sans-serif">${escXml(col.sql_type || '')}</text>`;
+        font-size="11" font-family="Inter,system-ui,sans-serif">${escXml(col.sql_type || '')}</text>`;
     });
   });
 
   wrap.innerHTML = `<svg class="erd-svg" width="100%" height="${svgH}" style="max-width:${svgW}px"
     viewBox="0 0 ${svgW} ${svgH}" xmlns="http://www.w3.org/2000/svg">
-    ${defs}${boxes}${arrows}
+    ${defs}${arrows}${boxes}${cardinalityLabels}
   </svg>`;
 }
 

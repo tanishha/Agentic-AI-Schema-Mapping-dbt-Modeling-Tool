@@ -1,5 +1,5 @@
 {
-  "summary": "This dbt transformation plan covers the cleaning, staging, and enrichment of five SQLite tables: customer, member, order, product, and transaction. The plan includes staging models for data cleaning, mart models for pass-through, and enriched marts that join related tables based on declared foreign keys. Data quality is enforced with uniqueness, not-null, and relationship tests. All logic is conservative and does not invent columns or tables.",
+  "summary": "This dbt transformation plan covers the cleaning, staging, and enrichment of five SQLite tables: customer, member, order, product, and transaction. The plan includes staging models for data cleaning, mart models for pass-through, and enriched marts that join related tables based on declared foreign keys. Data quality tests are specified for primary and foreign keys. All logic is conservative and does not invent columns or tables.",
   "tables": [
     {
       "name": "customer",
@@ -218,11 +218,11 @@
   ],
   "assumptions": [
     "No additional columns or tables are created beyond those in the schema.",
-    "All joins in derived models are left joins to preserve child table records even if parent data is missing.",
-    "Cleaning is conservative: only type casting and trimming whitespace; no imputation or transformation of values.",
-    "Date fields (order_date, activity_date) are left as TEXT and not parsed or reformatted.",
-    "No business logic is inferred for derived fields beyond joining related tables.",
-    "Tests are only applied to declared primary keys, not-null columns, and foreign key relationships."
+    "Cleaning is limited to type casting and trimming whitespace; no advanced validation is performed.",
+    "All joins in enriched marts are left joins to preserve child table records even if parent data is missing.",
+    "Date fields are left as TEXT; no date parsing or conversion is performed.",
+    "No business logic or derived metrics are added beyond the described joins.",
+    "Tests are only applied to primary and foreign key columns as specified."
   ],
   "source": "llm"
 }
