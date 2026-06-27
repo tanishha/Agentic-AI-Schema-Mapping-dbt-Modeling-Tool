@@ -4,6 +4,9 @@ import re
 from collections import defaultdict
 from typing import Iterable
 
+import sqlglot
+import sqlglot.expressions as exp
+
 from llm_client import get_llm_client, get_model_name
 from models import ColumnProfile, MigrationState
 
@@ -47,6 +50,46 @@ def _strip_markdown(text: str) -> str:
         if "CREATE TABLE" in stripped.upper():
             return stripped
     return text.strip()
+
+
+def _existing_table_names(ddl: str) -> set[str]:
+    names: set[str] = set()
+    if not ddl.strip():
+        return names
+    try:
+        for stmt in sqlglot.parse(ddl):
+            if not isinstance(stmt, exp.Create):
+                continue
+            table = stmt.find(exp.Table)
+            if table:
+                names.add(table.name.lower())
+    except Exception:
+        for match in re.finditer(r"CREATE\s+TABLE\s+[`\"\[]?([a-zA-Z_][\w]*)", ddl, flags=re.IGNORECASE):
+            names.add(match.group(1).lower())
+    return names
+
+
+def _table_name_from_statement(statement: str) -> str | None:
+    try:
+        parsed = sqlglot.parse_one(statement)
+        table = parsed.find(exp.Table) if parsed else None
+        return table.name if table else None
+    except Exception:
+        match = re.search(r"CREATE\s+TABLE\s+[`\"\[]?([a-zA-Z_][\w]*)", statement, flags=re.IGNORECASE)
+        return match.group(1) if match else None
+
+
+def _fallback_extend_schema(existing_ddl: str, catalog: Iterable[ColumnProfile]) -> str:
+    existing_names = _existing_table_names(existing_ddl)
+    generated = _fallback_schema(catalog)
+    additions: list[str] = []
+    for statement in [part.strip() for part in generated.split(";") if part.strip()]:
+        table = _table_name_from_statement(statement)
+        if table and table.lower() not in existing_names:
+            additions.append(statement.rstrip(";") + ";")
+    pieces = [existing_ddl.strip().rstrip(";") + ";"] if existing_ddl.strip() else []
+    pieces.extend(additions)
+    return "\n\n".join(pieces)
 
 
 def _fallback_schema(catalog: Iterable[ColumnProfile]) -> str:
@@ -111,6 +154,26 @@ def _build_prompt(catalog: list[ColumnProfile]) -> str:
     )
 
 
+def _build_extend_prompt(catalog: list[ColumnProfile], existing_ddl: str) -> str:
+    catalog_json = json.dumps(catalog, indent=2)
+    return (
+        "Extend this existing SQLite target schema for a data migration project.\n"
+        "Use the new source-file profiles to add or modify final tables while preserving the existing schema.\n\n"
+        "Requirements:\n"
+        "- Return the full merged SQL DDL only. No prose and no markdown fences.\n"
+        "- Preserve all existing tables and columns unless a change is clearly needed.\n"
+        "- Add new tables for new business entities in the source files.\n"
+        "- If the new data has columns that belong in existing tables, keep those tables in the merged DDL.\n"
+        "- Add FOREIGN KEY constraints from new tables to existing tables when IDs or names clearly match.\n"
+        "- Do not create disconnected tables when a clear relationship to the existing schema exists.\n"
+        "- If you create a synthetic ID column that does not exist in the source files, define it as INTEGER PRIMARY KEY AUTOINCREMENT.\n"
+        "- Use NOT NULL only when the source profile strongly supports it.\n"
+        "- Prefer stable snake_case table and column names.\n\n"
+        f"Existing project schema:\n{existing_ddl}\n\n"
+        f"New source catalog:\n{catalog_json}"
+    )
+
+
 def _build_feedback_prompt(
     catalog: list[ColumnProfile],
     current_ddl: str,
@@ -156,19 +219,22 @@ def refine_schema_with_feedback(
 def schema_generation_agent(state: MigrationState) -> dict:
     events = list(state.get("events", []))
     catalog = state.get("intermediate_catalog", [])
+    existing_ddl = state.get("ddl_content", "")
+    is_extend = state.get("schema_mode") == "extend"
 
     try:
         client = get_llm_client()
         model = get_model_name()
+        prompt = _build_extend_prompt(catalog, existing_ddl) if is_extend else _build_prompt(catalog)
         response = client.chat.completions.create(
             model=model,
-            messages=[{"role": "user", "content": _build_prompt(catalog)}],
+            messages=[{"role": "user", "content": prompt}],
             temperature=0,
         )
         ddl = _strip_markdown(response.choices[0].message.content)
         source = "llm"
     except Exception as exc:
-        ddl = _fallback_schema(catalog)
+        ddl = _fallback_extend_schema(existing_ddl, catalog) if is_extend else _fallback_schema(catalog)
         source = f"fallback: {exc}"
 
     events.append({

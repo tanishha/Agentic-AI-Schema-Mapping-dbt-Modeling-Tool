@@ -29,6 +29,11 @@ data/checkpoints.db
 data/output/
 data/database/*.db
 migration.db
+data/dbt/logs/
+data/dbt/target/
+data/dbt/backups/
+data/dbt/.user.yml
+data/dbt/.pending_transformations.json
 
 # Editor / OS
 .DS_Store

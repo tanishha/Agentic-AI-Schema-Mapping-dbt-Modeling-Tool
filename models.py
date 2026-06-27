@@ -48,18 +48,27 @@ class ValidationResult(TypedDict):
     status: str  # "ok" | "warning" | "error"
 
 
+class RawTableResult(TypedDict):
+    table: str
+    source_file: str
+    rows: int
+    columns: List[str]
+    database: str
+
+
 class MigrationState(TypedDict):
     session_id: str
     stage: Literal[
         "UPLOADING", "PROFILING", "READY", "MAPPING",
         "REVIEWING", "MIGRATING", "DONE", "ERROR"
     ]
-    schema_mode: Literal["upload", "generate", "project"]
+    schema_mode: Literal["upload", "generate", "project", "extend"]
     source_files: List[str]
     ddl_content: str
     intermediate_catalog: List[ColumnProfile]
     target_tables: List[TableSchema]
     selected_tables: List[str]
+    raw_tables: List[RawTableResult]
     proposed_mappings: List[MappingItem]
     confirmed_mappings: List[MappingItem]
     rows_loaded: dict          # {table_name: {filename: row_count}}

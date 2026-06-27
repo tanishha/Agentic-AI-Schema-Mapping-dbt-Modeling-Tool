@@ -1,0 +1,14 @@
+name: dbmapper
+version: '1.0'
+config-version: 2
+
+profile: dbmapper_sqlite
+
+model-paths: ["models"]
+
+models:
+  dbmapper:
+    staging:
+      +materialized: view
+    marts:
+      +materialized: table

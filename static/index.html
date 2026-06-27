@@ -100,7 +100,7 @@ header p  { color: var(--muted); font-size: 13px; margin-top: 4px; }
 
 .schema-mode {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
   margin-bottom: 16px;
 }
@@ -168,6 +168,152 @@ header p  { color: var(--muted); font-size: 13px; margin-top: 4px; }
   font-family: inherit;
   font-size: 13px;
   line-height: 1.4;
+}
+.upload-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.upload-heading h2 { margin-bottom: 0; }
+.raw-table-box {
+  margin-top: 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+.raw-table-list { display: grid; gap: 8px; }
+.raw-table-item {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) 170px 92px 64px;
+  column-gap: 14px;
+  align-items: center;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+.raw-table-item:last-child { border-bottom: none; padding-bottom: 0; }
+.raw-table-item code { color: var(--accent); }
+.raw-table-item span { color: var(--muted); }
+.raw-table-item .table-db { text-align: left; }
+.raw-table-item .table-rows,
+.raw-table-item .table-cols { text-align: right; white-space: nowrap; }
+.dbt-empty { color: var(--muted); font-size: 13px; }
+.dbt-status {
+  margin-top: 14px;
+  color: var(--green);
+  font-size: 13px;
+  font-weight: 600;
+}
+.dbt-plan {
+  margin-top: 14px;
+  display: grid;
+  gap: 10px;
+}
+.dbt-plan-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.dbt-plan-card strong {
+  display: block;
+  color: var(--text);
+  margin-bottom: 5px;
+}
+.dbt-plan-card code { color: var(--accent); }
+.dbt-change-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+.dbt-change-row {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+.dbt-change-action {
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 3px 6px;
+  text-align: center;
+  text-transform: uppercase;
+  font-size: 10px;
+  font-weight: 700;
+}
+.dbt-change-action.create { color: var(--green); border-color: rgba(34,197,94,.35); }
+.dbt-change-action.update { color: var(--amber); border-color: rgba(245,158,11,.35); }
+.dbt-change-action.preserve { color: var(--muted); }
+.dbt-file-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.dbt-file-tab {
+  background: var(--bg);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 9px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.dbt-file-tab.active {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.dbt-file-view {
+  margin-top: 10px;
+  background: #080a10;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  max-height: 360px;
+  overflow: auto;
+}
+.dbt-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.dbt-example {
+  background: var(--surface);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 9px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.dbt-output {
+  margin-top: 14px;
+  background: #080a10;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  max-height: 280px;
+  overflow: auto;
 }
 
 /* File list */
@@ -380,27 +526,38 @@ select.inline-select:focus { outline: none; border-color: var(--accent); }
 
 <!-- ── Panel 1: Upload ─────────────────────────────────────────────────── -->
 <div class="card" id="panel-upload">
-  <h2>Upload files</h2>
+  <div class="upload-heading">
+    <h2>Upload files</h2>
+    <button type="button" class="btn btn-secondary" id="btn-open-dbt-from-upload">dbt Steps for Loaded Tables</button>
+  </div>
+  <h3>Final Target Schema</h3>
   <div class="schema-mode" id="schema-mode">
     <label>
       <input type="radio" name="schema-mode" value="upload" checked>
       <span>
-        <strong>Use uploaded target_schema.sql</strong>
-        <span>Best when the target schema already exists.</span>
+        <strong>Upload final schema SQL</strong>
+        <span>Use an existing DDL for the final tables after raw/staging load.</span>
       </span>
     </label>
     <label>
       <input type="radio" name="schema-mode" value="generate">
       <span>
-        <strong>Generate suggested schema</strong>
-        <span>Best for first upload; review the generated DDL before mapping.</span>
+        <strong>Generate final schema</strong>
+        <span>Best for first upload; review the suggested final DDL before mapping.</span>
       </span>
     </label>
     <label>
       <input type="radio" name="schema-mode" value="project">
       <span>
-        <strong>Use project.db schema</strong>
-        <span>Best for loading a new source file into the existing database.</span>
+        <strong>Use project.db final schema</strong>
+        <span>Best for loading new source files into existing final tables.</span>
+      </span>
+    </label>
+    <label>
+      <input type="radio" name="schema-mode" value="extend">
+      <span>
+        <strong>Extend project.db schema</strong>
+        <span>Best when new source files should add connected tables or columns.</span>
       </span>
     </label>
   </div>
@@ -422,6 +579,10 @@ select.inline-select:focus { outline: none; border-color: var(--accent); }
 <div class="card hidden" id="panel-profiling">
   <h2>Pipeline Progress</h2>
   <div class="progress-log" id="profiling-log"></div>
+  <div class="raw-table-box hidden" id="raw-table-box">
+    <h3>Raw/Staging Tables</h3>
+    <div class="raw-table-list" id="raw-table-list"></div>
+  </div>
   <div class="schema-draft hidden" id="schema-draft-box">
     <h3>Review Suggested Schema</h3>
     <p class="schema-draft-note">Edit this SQLite DDL if needed, then continue to table selection.</p>
@@ -544,8 +705,76 @@ select.inline-select:focus { outline: none; border-color: var(--accent); }
   </div>
   <div class="actions done-actions">
     <button type="button" class="btn btn-ghost"   id="btn-edit-mappings">✏ Edit Mappings</button>
+    <button type="button" class="btn btn-secondary" id="btn-dbt-steps">Continue to dbt Steps</button>
     <button type="button" class="btn btn-primary" id="btn-new-data">New Migration →</button>
   </div>
+</div>
+
+<!-- dbt readiness / next phase -->
+<div class="card hidden" id="panel-dbt">
+  <h2>dbt Steps</h2>
+
+  <div class="raw-table-box hidden" id="dbt-raw-table-box">
+    <h3>Current Session Raw/Staging Tables</h3>
+    <div class="raw-table-list" id="dbt-raw-table-list">
+      <div class="dbt-empty">Run a migration first to see session raw tables here.</div>
+    </div>
+  </div>
+
+  <div class="raw-table-box">
+    <h3>project.db Final Tables</h3>
+    <div class="raw-table-list" id="dbt-project-table-list">
+      <div class="dbt-empty">Loading project tables...</div>
+    </div>
+  </div>
+
+  <div id="dbt-error" class="error-banner hidden"></div>
+  <div id="dbt-status" class="dbt-status hidden"></div>
+  <div id="dbt-plan" class="dbt-plan hidden"></div>
+  <div class="raw-table-box hidden" id="dbt-change-box">
+    <h3>Suggested Transformation Changes</h3>
+    <div class="dbt-empty">
+      Review these actions first. Existing SQL model files are preserved; YAML/plan files may be refreshed.
+    </div>
+    <div class="dbt-change-list" id="dbt-change-list"></div>
+    <div class="actions">
+      <button type="button" class="btn btn-primary" id="btn-dbt-apply" disabled>Apply Transformations</button>
+    </div>
+  </div>
+  <div class="raw-table-box hidden" id="dbt-files-box">
+    <h3>Generated dbt Files</h3>
+    <div class="dbt-file-tabs" id="dbt-file-tabs"></div>
+    <pre class="dbt-file-view" id="dbt-file-view"></pre>
+  </div>
+  <div class="schema-chat hidden" id="dbt-chat-box">
+    <div class="schema-chat-log" id="dbt-chat-log">
+      <div class="schema-chat-msg assistant">Ask for changes to the generated dbt transformations.</div>
+    </div>
+    <textarea id="dbt-feedback" spellcheck="true" placeholder="Example: create mart_customer_order_summary with total_orders and total_revenue per customer."></textarea>
+    <div class="dbt-examples">
+      <button type="button" class="dbt-example" data-example="Create mart_customer_order_summary with total_orders, total_revenue, and last_order_date per customer.">Customer summary</button>
+      <button type="button" class="dbt-example" data-example="Add revenue as quantity * price in mart_order and mart_order_enriched.">Order revenue</button>
+      <button type="button" class="dbt-example" data-example="Add product-level sales totals with total_quantity and total_revenue.">Product sales</button>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn btn-secondary" id="btn-dbt-feedback">Apply dbt Feedback</button>
+    </div>
+  </div>
+  <div class="actions">
+    <button type="button" class="btn btn-ghost" id="btn-dbt-back-upload">Back to Upload</button>
+    <button type="button" class="btn btn-secondary" id="btn-dbt-refresh">Refresh Table List</button>
+    <button type="button" class="btn btn-ghost" id="btn-dbt-proceed">Prepare dbt Project</button>
+    <button type="button" class="btn btn-primary" id="btn-dbt-generate" disabled>Transformations</button>
+  </div>
+  <div class="actions">
+    <button type="button" class="btn btn-secondary dbt-run-btn" data-dbt-command="debug">dbt debug</button>
+    <button type="button" class="btn btn-secondary dbt-run-btn" data-dbt-command="compile">dbt compile</button>
+    <button type="button" class="btn btn-secondary dbt-run-btn" data-dbt-command="build">dbt build</button>
+    <button type="button" class="btn btn-secondary dbt-run-btn" data-dbt-command="test">dbt test</button>
+    <button type="button" class="btn btn-primary" id="btn-dbt-run-all">Run All dbt Steps</button>
+    <button type="button" class="btn btn-ghost hidden" id="btn-dbt-output-toggle">Hide Output</button>
+  </div>
+  <pre id="dbt-output" class="dbt-output hidden"></pre>
 </div>
 
 <script>
@@ -558,6 +787,7 @@ const S = {
   targetTables: [],    // selected TableSchema[]
   allTargetTables: [], // all parsed TableSchema[]
   selectedTables: [],  // table names selected for population
+  rawTables: [],       // raw/staging table outputs
   sourceCatalog: [],   // profiler output, one entry per source column
   filesByName: {},     // filename → [col, ...]
   currentTableIdx: 0,
@@ -571,6 +801,7 @@ const panels = {
   profiling: document.getElementById('panel-profiling'),
   review:    document.getElementById('panel-review'),
   done:      document.getElementById('panel-done'),
+  dbt:       document.getElementById('panel-dbt'),
 };
 const steps = [1,2,3,4].map(i => document.getElementById('step-' + i));
 
@@ -640,7 +871,9 @@ function renderFileList() {
       ? 'Accept: .csv, .json (data files) and exactly one .sql (DDL)'
       : S.schemaMode === 'project'
         ? 'Accept: .csv or .json data files. Schema will be read from data/database/project.db.'
-        : 'Accept: .csv or .json data files. SQL is optional and ignored in generated-schema mode.';
+        : S.schemaMode === 'extend'
+          ? 'Accept: .csv or .json data files. Existing project.db schema will be extended.'
+          : 'Accept: .csv or .json data files. SQL is optional and ignored in generated-schema mode.';
   }
   btnStart.disabled = S.schemaMode === 'upload'
     ? !(ddls === 1 && datas >= 1)
@@ -663,6 +896,7 @@ btnStart.addEventListener('click', async () => {
     showPanel('profiling', 1);
     document.getElementById('schema-draft-box').classList.add('hidden');
     document.getElementById('table-select-box').classList.add('hidden');
+    document.getElementById('raw-table-box').classList.add('hidden');
     startSSE();
   } catch (err) {
     showErr(uploadErr, 'Failed to start: ' + err.message);
@@ -687,6 +921,21 @@ function handleEvent(ev) {
       const { file, columns } = ev.payload;
       upsertLog(profilingLog, 'plog-' + esc(file), '✅',
                 `${file} — profiled (${columns} columns)`);
+      break;
+    }
+    case 'raw_load_progress': {
+      const { table, file, rows, columns } = ev.payload;
+      upsertLog(
+        profilingLog,
+        'plog-raw-' + esc(table),
+        'OK',
+        `[raw/staging] ${file} -> ${table} (${Number(rows || 0).toLocaleString()} rows, ${columns} columns)`
+      );
+      break;
+    }
+    case 'raw_load_done': {
+      S.rawTables = ev.payload.tables || [];
+      renderRawTables(S.rawTables);
       break;
     }
     case 'ddl_parsed': {
@@ -767,6 +1016,410 @@ function upsertLog(container, id, icon, text, spinner = false) {
 }
 
 // ── Review panel ─────────────────────────────────────────────────────────────
+function renderRawTables(tables) {
+  const box = document.getElementById('raw-table-box');
+  const list = document.getElementById('raw-table-list');
+  if (!tables || !tables.length) {
+    list.innerHTML = '';
+    box.classList.add('hidden');
+    return;
+  }
+  renderTableRows(list, tables, 'No raw/staging tables loaded yet.');
+  box.classList.remove('hidden');
+}
+
+function renderTableRows(list, tables, emptyText) {
+  list.innerHTML = '';
+  if (!tables || !tables.length) {
+    const empty = el('div', 'dbt-empty');
+    empty.textContent = emptyText;
+    list.appendChild(empty);
+    return;
+  }
+  tables.forEach(table => {
+    const row = el('div', 'raw-table-item');
+    const name = document.createElement('code');
+    name.textContent = table.table;
+    const file = document.createElement('span');
+    file.className = 'table-db';
+    file.textContent = table.file || table.source_file || 'project.db';
+    const rows = document.createElement('strong');
+    rows.className = 'table-rows';
+    rows.textContent = `${Number(table.rows || 0).toLocaleString()} rows`;
+    const cols = document.createElement('span');
+    cols.className = 'table-cols';
+    const columnCount = Array.isArray(table.columns) ? table.columns.length : table.columns;
+    cols.textContent = `${Number(columnCount || 0).toLocaleString()} cols`;
+    row.append(name, file, rows, cols);
+    list.appendChild(row);
+  });
+}
+
+async function openDbtPanel() {
+  document.getElementById('dbt-error').classList.add('hidden');
+  document.getElementById('dbt-status').classList.add('hidden');
+  document.getElementById('dbt-plan').classList.add('hidden');
+  document.getElementById('dbt-change-box').classList.add('hidden');
+  document.getElementById('btn-dbt-apply').disabled = true;
+  document.getElementById('dbt-chat-box').classList.remove('hidden');
+  showPanel('dbt', 3);
+  document.getElementById('dbt-raw-table-box').classList.toggle('hidden', !S.rawTables.length);
+  renderTableRows(
+    document.getElementById('dbt-raw-table-list'),
+    S.rawTables,
+    'Run a migration first to see session raw/staging tables here.'
+  );
+  await refreshDbtProjectTables();
+}
+
+async function refreshDbtProjectTables() {
+  const list = document.getElementById('dbt-project-table-list');
+  const err = document.getElementById('dbt-error');
+  const proceed = document.getElementById('btn-dbt-proceed');
+  const generate = document.getElementById('btn-dbt-generate');
+  err.classList.add('hidden');
+  proceed.disabled = true;
+  generate.disabled = true;
+  list.innerHTML = '<div class="dbt-empty">Loading project tables...</div>';
+  try {
+    const result = await api('GET', '/database/tables');
+    const tables = result.tables || [];
+    renderTableRows(
+      list,
+      tables,
+      'project.db does not have final tables yet. Run a migration first.'
+    );
+    proceed.disabled = tables.length === 0;
+    generate.disabled = tables.length === 0;
+  } catch (e) {
+    renderTableRows(list, [], 'Could not load project.db tables.');
+    showErr(err, 'Could not load project.db tables: ' + e.message);
+    proceed.disabled = true;
+    generate.disabled = true;
+  }
+}
+
+async function proceedDbt() {
+  const btn = document.getElementById('btn-dbt-proceed');
+  const status = document.getElementById('dbt-status');
+  const err = document.getElementById('dbt-error');
+  btn.disabled = true;
+  btn.textContent = 'Preparing...';
+  status.classList.add('hidden');
+  err.classList.add('hidden');
+  try {
+    const result = await api('POST', '/database/dbt/prepare');
+    const created = (result.files || []).length;
+    const preserved = (result.skipped_files || []).length;
+    status.textContent =
+      `dbt project config refreshed at ${result.dbt_path}. `
+      + `${created} file${created === 1 ? '' : 's'} written; `
+      + `${preserved} existing model file${preserved === 1 ? '' : 's'} preserved.`;
+    status.style.color = 'var(--green)';
+    status.classList.remove('hidden');
+    await loadDbtFiles();
+  } catch (e) {
+    showErr(err, 'Could not prepare dbt project: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Prepare dbt Project';
+  }
+}
+
+async function generateDbtTransformations() {
+  const btn = document.getElementById('btn-dbt-generate');
+  const status = document.getElementById('dbt-status');
+  const planBox = document.getElementById('dbt-plan');
+  const err = document.getElementById('dbt-error');
+  btn.disabled = true;
+  btn.textContent = 'Planning...';
+  status.classList.add('hidden');
+  planBox.classList.add('hidden');
+  document.getElementById('dbt-change-box').classList.add('hidden');
+  document.getElementById('btn-dbt-apply').disabled = true;
+  err.classList.add('hidden');
+  try {
+    const result = await api('POST', '/database/dbt/preview');
+    const relationshipCount = (result.relationships || []).length;
+    const actions = result.file_actions || [];
+    const createCount = actions.filter(a => a.action === 'create').length;
+    const updateCount = actions.filter(a => a.action === 'update').length;
+    const preserveCount = actions.filter(a => a.action === 'preserve').length;
+    status.textContent =
+      `Suggested ${createCount} create, ${updateCount} refresh, and ${preserveCount} preserve action${actions.length === 1 ? '' : 's'} `
+      + `with ${relationshipCount} inferred relationship${relationshipCount === 1 ? '' : 's'}. Review below before applying.`;
+    status.style.color = 'var(--green)';
+    status.classList.remove('hidden');
+    renderDbtPlan(result.plan || {}, result.relationships || []);
+    planBox.classList.remove('hidden');
+    renderDbtChangeList(actions);
+    document.getElementById('dbt-change-box').classList.remove('hidden');
+    document.getElementById('btn-dbt-apply').disabled = false;
+    document.getElementById('dbt-chat-box').classList.remove('hidden');
+  } catch (e) {
+    showErr(err, 'Could not generate dbt transformations: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Transformations';
+  }
+}
+
+function renderDbtChangeList(actions) {
+  const list = document.getElementById('dbt-change-list');
+  list.innerHTML = '';
+  if (!actions || !actions.length) {
+    list.innerHTML = '<div class="dbt-empty">No dbt changes suggested.</div>';
+    return;
+  }
+  actions.forEach(item => {
+    const row = el('div', 'dbt-change-row');
+    const action = el('span', `dbt-change-action ${item.action || ''}`);
+    action.textContent = item.action || 'change';
+    const path = document.createElement('code');
+    path.textContent = item.path;
+    row.append(action, path);
+    list.appendChild(row);
+  });
+}
+
+async function applyDbtTransformations() {
+  const btn = document.getElementById('btn-dbt-apply');
+  const status = document.getElementById('dbt-status');
+  const planBox = document.getElementById('dbt-plan');
+  const err = document.getElementById('dbt-error');
+  btn.disabled = true;
+  btn.textContent = 'Applying...';
+  status.classList.add('hidden');
+  err.classList.add('hidden');
+  try {
+    const result = await api('POST', '/database/dbt/apply');
+    const writtenCount = (result.files || []).length;
+    const preservedCount = (result.skipped_files || []).length;
+    const backup = result.backup_path ? ` Backup: ${result.backup_path}.` : '';
+    status.textContent =
+      `Applied ${writtenCount} dbt file${writtenCount === 1 ? '' : 's'}; `
+      + `${preservedCount} existing SQL model file${preservedCount === 1 ? '' : 's'} preserved.`
+      + backup;
+    status.style.color = 'var(--green)';
+    status.classList.remove('hidden');
+    renderDbtPlan(result.plan || {}, result.relationships || []);
+    planBox.classList.remove('hidden');
+    document.getElementById('dbt-change-box').classList.add('hidden');
+    await loadDbtFiles();
+  } catch (e) {
+    showErr(err, 'Could not apply dbt transformations: ' + e.message);
+    btn.disabled = false;
+  } finally {
+    btn.textContent = 'Apply Transformations';
+  }
+}
+
+function renderDbtPlan(plan, relationships) {
+  const box = document.getElementById('dbt-plan');
+  box.innerHTML = '';
+  const addCard = (title, body) => {
+    const card = el('div', 'dbt-plan-card');
+    const heading = document.createElement('strong');
+    heading.textContent = title;
+    const content = document.createElement('div');
+    content.innerHTML = body;
+    card.append(heading, content);
+    box.appendChild(card);
+  };
+
+  addCard('Summary', escXml(plan.summary || 'No summary returned.'));
+
+  const tables = Array.isArray(plan.tables) ? plan.tables : [];
+  addCard(
+    'Models',
+    tables.length
+      ? tables.map(t => `<code>${escXml(t.staging_model || '')}</code> -> <code>${escXml(t.mart_model || '')}</code>`).join('<br>')
+      : 'No table-level model details returned.'
+  );
+
+  const rels = Array.isArray(relationships) && relationships.length
+    ? relationships
+    : (Array.isArray(plan.relationships) ? plan.relationships : []);
+  addCard(
+    'Relationships',
+    rels.length
+      ? rels.map(r => `<code>${escXml(r.child_table)}.${escXml(r.child_column)}</code> -> <code>${escXml(r.parent_table)}.${escXml(r.parent_column)}</code>`).join('<br>')
+      : 'No relationships inferred.'
+  );
+
+  const derived = Array.isArray(plan.derived_models) ? plan.derived_models : [];
+  addCard(
+    'Derived Marts',
+    derived.length
+      ? derived.map(m => `<code>${escXml(m.name || '')}</code>: ${escXml(m.logic || '')}`).join('<br>')
+      : 'No derived marts generated.'
+  );
+
+  addCard('Tests', escXml(typeof plan.tests === 'string' ? plan.tests : JSON.stringify(plan.tests || {}, null, 2)));
+  if (plan.assumptions) {
+    addCard('Assumptions', escXml(Array.isArray(plan.assumptions) ? plan.assumptions.join('\n') : String(plan.assumptions)));
+  }
+}
+
+async function loadDbtFiles() {
+  const box = document.getElementById('dbt-files-box');
+  const tabs = document.getElementById('dbt-file-tabs');
+  const view = document.getElementById('dbt-file-view');
+  try {
+    const result = await api('GET', '/database/dbt/files');
+    const files = result.files || [];
+    tabs.innerHTML = '';
+    view.textContent = '';
+    if (!files.length) {
+      box.classList.add('hidden');
+      return;
+    }
+    files.forEach((file, idx) => {
+      const tab = document.createElement('button');
+      tab.type = 'button';
+      tab.className = 'dbt-file-tab' + (idx === 0 ? ' active' : '');
+      tab.textContent = file.path;
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.dbt-file-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        view.textContent = file.content;
+      });
+      tabs.appendChild(tab);
+    });
+    view.textContent = files[0].content;
+    box.classList.remove('hidden');
+  } catch (_) {
+    box.classList.add('hidden');
+  }
+}
+
+function addDbtChatMessage(role, text) {
+  const log = document.getElementById('dbt-chat-log');
+  const msg = el('div', `schema-chat-msg ${role}`);
+  msg.textContent = text;
+  log.appendChild(msg);
+  log.scrollTop = log.scrollHeight;
+}
+
+async function applyDbtFeedback() {
+  const btn = document.getElementById('btn-dbt-feedback');
+  const feedbackEl = document.getElementById('dbt-feedback');
+  const planBox = document.getElementById('dbt-plan');
+  const status = document.getElementById('dbt-status');
+  const err = document.getElementById('dbt-error');
+  const feedback = feedbackEl.value.trim();
+  if (!feedback) {
+    showErr(err, 'Enter dbt feedback first.');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Applying...';
+  status.classList.add('hidden');
+  err.classList.add('hidden');
+  addDbtChatMessage('user', feedback);
+
+  try {
+    const result = await api('POST', '/database/dbt/feedback', { feedback });
+    feedbackEl.value = '';
+    const backup = result.backup_path ? ` Backup: ${result.backup_path}.` : '';
+    status.textContent = `Updated ${result.files.length} dbt file${result.files.length === 1 ? '' : 's'}.${backup}`;
+    status.style.color = 'var(--green)';
+    status.classList.remove('hidden');
+    if (result.plan) {
+      renderDbtPlan(result.plan, []);
+      planBox.classList.remove('hidden');
+    }
+    await loadDbtFiles();
+    addDbtChatMessage('assistant', result.message || 'Updated dbt transformations.');
+  } catch (e) {
+    showErr(err, 'dbt feedback failed: ' + e.message);
+    addDbtChatMessage('assistant', 'Feedback was not applied.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Apply dbt Feedback';
+  }
+}
+
+async function runDbtCommand(command, button) {
+  const output = document.getElementById('dbt-output');
+  const status = document.getElementById('dbt-status');
+  const err = document.getElementById('dbt-error');
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = `Running ${command}...`;
+  setDbtOutput(`Running dbt ${command}...\n`);
+  status.classList.add('hidden');
+  err.classList.add('hidden');
+  try {
+    const result = await api('POST', `/database/dbt/${command}`);
+    const stdout = result.stdout || '';
+    const stderr = result.stderr || '';
+    setDbtOutput(
+      `dbt ${command} -> ${result.status} (exit ${result.returncode ?? 'n/a'})\n\n`
+      + (stdout ? `STDOUT\n${stdout}\n\n` : '')
+      + (stderr ? `STDERR\n${stderr}` : '')
+    );
+    status.textContent = result.status === 'ok'
+      ? `dbt ${command} completed successfully.`
+      : `dbt ${command} failed. See output below.`;
+    status.style.color = result.status === 'ok' ? 'var(--green)' : 'var(--red)';
+    status.classList.remove('hidden');
+  } catch (e) {
+    output.textContent = '';
+    showErr(err, `dbt ${command} failed: ${e.message}`);
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+async function runAllDbtSteps() {
+  const btn = document.getElementById('btn-dbt-run-all');
+  const status = document.getElementById('dbt-status');
+  const err = document.getElementById('dbt-error');
+  btn.disabled = true;
+  btn.textContent = 'Running all...';
+  setDbtOutput('Running dbt debug -> compile -> build -> test...\n');
+  status.classList.add('hidden');
+  err.classList.add('hidden');
+  try {
+    const result = await api('POST', '/database/dbt/run-all');
+    setDbtOutput(result.results.map(r =>
+      `dbt ${r.command} -> ${r.status} (exit ${r.returncode ?? 'n/a'})\n`
+      + (r.stdout ? `STDOUT\n${r.stdout}\n` : '')
+      + (r.stderr ? `STDERR\n${r.stderr}\n` : '')
+    ).join('\n---\n'));
+    status.textContent = result.status === 'ok'
+      ? 'All dbt steps completed successfully.'
+      : 'dbt run-all stopped on an error. See output below.';
+    status.style.color = result.status === 'ok' ? 'var(--green)' : 'var(--red)';
+    status.classList.remove('hidden');
+    await refreshDbtProjectTables();
+  } catch (e) {
+    showErr(err, 'dbt run-all failed: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Run All dbt Steps';
+  }
+}
+
+function setDbtOutput(text) {
+  const output = document.getElementById('dbt-output');
+  const toggle = document.getElementById('btn-dbt-output-toggle');
+  output.textContent = text || '';
+  output.classList.remove('hidden');
+  toggle.classList.remove('hidden');
+  toggle.textContent = 'Hide Output';
+}
+
+function toggleDbtOutput() {
+  const output = document.getElementById('dbt-output');
+  const toggle = document.getElementById('btn-dbt-output-toggle');
+  const hidden = output.classList.toggle('hidden');
+  toggle.textContent = hidden ? 'Show Latest Output' : 'Hide Output';
+}
+
 function normalizeMapping(mapping) {
   const normalized = { ...mapping };
   ['source_file', 'source_column', 'transformation'].forEach(key => {
@@ -1491,6 +2144,28 @@ document.getElementById('btn-new-data').addEventListener('click', async () => {
   resetApp();
 });
 
+document.getElementById('btn-open-dbt-from-upload').addEventListener('click', openDbtPanel);
+document.getElementById('btn-dbt-steps').addEventListener('click', openDbtPanel);
+document.getElementById('btn-dbt-refresh').addEventListener('click', refreshDbtProjectTables);
+document.getElementById('btn-dbt-proceed').addEventListener('click', proceedDbt);
+document.getElementById('btn-dbt-generate').addEventListener('click', generateDbtTransformations);
+document.getElementById('btn-dbt-apply').addEventListener('click', applyDbtTransformations);
+document.getElementById('btn-dbt-feedback').addEventListener('click', applyDbtFeedback);
+document.querySelectorAll('.dbt-run-btn').forEach(btn => {
+  btn.addEventListener('click', () => runDbtCommand(btn.dataset.dbtCommand, btn));
+});
+document.getElementById('btn-dbt-run-all').addEventListener('click', runAllDbtSteps);
+document.getElementById('btn-dbt-output-toggle').addEventListener('click', toggleDbtOutput);
+document.querySelectorAll('.dbt-example').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.getElementById('dbt-feedback').value = btn.dataset.example || '';
+    document.getElementById('dbt-feedback').focus();
+  });
+});
+document.getElementById('btn-dbt-back-upload').addEventListener('click', () => {
+  showPanel('upload', 0);
+});
+
 // ── Downloads ─────────────────────────────────────────────────────────────────
 document.getElementById('btn-dl-db').addEventListener('click', () => {
   dlFile(`/sessions/${S.sessionId}/download/db`, 'migration.db');
@@ -1524,6 +2199,7 @@ function downloadText(filename, text) {
 function resetApp() {
   S.sessionId = null; S.files = []; S.mappings = [];
   S.targetTables = []; S.allTargetTables = []; S.selectedTables = []; S.sourceCatalog = [];
+  S.rawTables = [];
   S.filesByName = {}; S.currentTableIdx = 0;
   S.schemaMode = 'upload';
   S.migrationStarted = false;
@@ -1540,8 +2216,32 @@ function resetApp() {
   document.getElementById('erd-wrap').innerHTML         = '';
   document.getElementById('erd-wrap-review').innerHTML  = '';
   document.getElementById('table-select-list').innerHTML = '';
+  document.getElementById('raw-table-list').innerHTML = '';
+  document.getElementById('dbt-raw-table-list').innerHTML =
+    '<div class="dbt-empty">Run a migration first to see session raw tables here.</div>';
+  document.getElementById('dbt-project-table-list').innerHTML =
+    '<div class="dbt-empty">Loading project tables...</div>';
   document.getElementById('total-rows').textContent     = '';
   uploadErr.classList.add('hidden');
+  document.getElementById('dbt-error').classList.add('hidden');
+  document.getElementById('dbt-status').classList.add('hidden');
+  document.getElementById('dbt-plan').classList.add('hidden');
+  document.getElementById('dbt-plan').innerHTML = '';
+  document.getElementById('dbt-change-box').classList.add('hidden');
+  document.getElementById('dbt-change-list').innerHTML = '';
+  document.getElementById('btn-dbt-apply').disabled = true;
+  document.getElementById('dbt-files-box').classList.add('hidden');
+  document.getElementById('dbt-file-tabs').innerHTML = '';
+  document.getElementById('dbt-file-view').textContent = '';
+  document.getElementById('dbt-chat-box').classList.add('hidden');
+  document.getElementById('dbt-output').classList.add('hidden');
+  document.getElementById('dbt-output').textContent = '';
+  document.getElementById('btn-dbt-output-toggle').classList.add('hidden');
+  document.getElementById('btn-dbt-output-toggle').textContent = 'Hide Output';
+  document.getElementById('dbt-feedback').value = '';
+  document.getElementById('dbt-chat-log').innerHTML =
+    '<div class="schema-chat-msg assistant">Ask for changes to the generated dbt transformations.</div>';
+  document.getElementById('dbt-raw-table-box').classList.add('hidden');
 
   // Reset confirm button
   const btn = document.getElementById('btn-confirm');
@@ -1554,6 +2254,7 @@ function resetApp() {
   document.getElementById('migration-summary').classList.add('hidden');
   document.getElementById('table-select-box').classList.add('hidden');
   document.getElementById('schema-draft-box').classList.add('hidden');
+  document.getElementById('raw-table-box').classList.add('hidden');
 
   showPanel('upload', 0);
   renderFileList();

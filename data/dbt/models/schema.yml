@@ -1,0 +1,88 @@
+version: 2
+
+models:
+  - name: stg_customer
+    description: Cleaned staging model for customer.
+    columns:
+      - name: customer_id
+        tests:
+          - not_null
+          - unique
+      - name: full_name
+      - name: email
+      - name: phone
+      - name: city
+  - name: mart_customer
+    description: Final mart model for customer.
+  - name: stg_member
+    description: Cleaned staging model for member.
+    columns:
+      - name: member_id
+        tests:
+          - not_null
+          - unique
+      - name: customer_id
+        tests:
+          - relationships:
+              arguments:
+                to: ref('stg_customer')
+                field: customer_id
+  - name: mart_member
+    description: Final mart model for member.
+  - name: stg_order
+    description: Cleaned staging model for order.
+    columns:
+      - name: order_id
+        tests:
+          - not_null
+          - unique
+      - name: customer_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_customer')
+                field: customer_id
+      - name: product_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_product')
+                field: product_id
+      - name: quantity
+      - name: price
+      - name: order_date
+  - name: mart_order
+    description: Final mart model for order.
+  - name: stg_product
+    description: Cleaned staging model for product.
+    columns:
+      - name: product_id
+        tests:
+          - not_null
+          - unique
+      - name: product_name
+        tests:
+          - not_null
+  - name: mart_product
+    description: Final mart model for product.
+  - name: stg_transaction
+    description: Cleaned staging model for transaction.
+    columns:
+      - name: transaction_id
+        tests:
+          - not_null
+          - unique
+      - name: member_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_member')
+                field: member_id
+      - name: points_earned
+      - name: tier
+      - name: activity_date
+  - name: mart_transaction
+    description: Final mart model for transaction.
