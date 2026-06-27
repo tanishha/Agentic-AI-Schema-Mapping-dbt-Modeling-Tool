@@ -1,13 +1,13 @@
 # Agentic AI Schema Mapping & dbt Modeling Tool
 
-**DBMapper** is a local data-engineering workspace for profiling CSV/JSON files, designing or reusing a SQLite target schema, inferring source-to-target mappings with an LLM, loading data into SQLite, and generating dbt transformations for cleaned staging and mart models.
+**DBMapper** is a local data-engineering workspace for profiling CSV files, designing or reusing a SQLite target schema, inferring source-to-target mappings with an LLM, loading data into SQLite, and generating dbt transformations for cleaned staging and mart models.
 
 The backend is FastAPI + LangGraph. The UI is a single static HTML/CSS/JS app. LLM calls go through `llm_client.py`, which supports Azure AI Foundry or local Ollama through `.env` settings.
 
 ## End-to-End Workflow
 
 ```text
-Upload CSV/JSON files
+Upload CSV files
   -> profile source columns
   -> load raw/session tables
   -> choose uploaded/generated/project/extended target schema
