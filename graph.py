@@ -6,6 +6,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 
 from models import MigrationState
 from agents.file_profiler import file_profiler_agent
+from agents.raw_loader import raw_loader_agent
 from agents.ddl_parser import ddl_parser_agent
 from agents.schema_generation import schema_generation_agent
 from agents.schema_review import schema_review_node
@@ -18,7 +19,7 @@ CHECKPOINT_DB = os.getenv("CHECKPOINT_DB", "data/checkpoints.db")
 
 
 def _route_after_profiler(state: MigrationState) -> str:
-    if state.get("schema_mode") == "generate":
+    if state.get("schema_mode") in {"generate", "extend"}:
         return "schema_generation"
     return "ddl_parser"
 
@@ -29,6 +30,7 @@ def build_graph():
     builder = StateGraph(MigrationState)
 
     builder.add_node("file_profiler", file_profiler_agent)
+    builder.add_node("raw_loader", raw_loader_agent)
     builder.add_node("schema_generation", schema_generation_agent)
     builder.add_node("schema_review", schema_review_node)
     builder.add_node("ddl_parser", ddl_parser_agent)
@@ -38,8 +40,9 @@ def build_graph():
     builder.add_node("data_migration", data_migration_agent)
 
     builder.set_entry_point("file_profiler")
+    builder.add_edge("file_profiler", "raw_loader")
     builder.add_conditional_edges(
-        "file_profiler",
+        "raw_loader",
         _route_after_profiler,
         {
             "schema_generation": "schema_generation",

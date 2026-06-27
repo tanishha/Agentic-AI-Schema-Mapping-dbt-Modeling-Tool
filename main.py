@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re
 import shutil
 import sqlite3
 import uuid
@@ -17,6 +18,14 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from agents.data_migration import data_migration_agent, validate_db, _db_path, _project_db_path, _report_path
+from agents.dbt_generation import (
+    apply_pending_dbt_transformations,
+    backup_dbt_project,
+    generate_dbt_transformations,
+    preview_dbt_transformations,
+    refine_dbt_transformations,
+)
+from agents.dbt_runner import run_dbt_command
 from agents.ddl_parser import ddl_parser_agent
 from agents.mapping_inference import mapping_inference_agent
 from agents.schema_generation import refine_schema_with_feedback
@@ -24,6 +33,7 @@ from graph import compiled_graph
 from models import MappingItem, MigrationState
 
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "data/uploads")
+DBT_DIR = os.getenv("DBT_DIR", "data/dbt")
 
 app = FastAPI(title="DBMapper")
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -69,6 +79,8 @@ def _project_schema_ddl() -> str:
             FROM sqlite_master
             WHERE type = 'table'
               AND name NOT LIKE 'sqlite_%'
+              AND name NOT LIKE 'stg_%'
+              AND name NOT LIKE 'mart_%'
               AND sql IS NOT NULL
             ORDER BY name
             """
@@ -80,6 +92,193 @@ def _project_schema_ddl() -> str:
     if not statements:
         raise HTTPException(400, "Project DB has no user tables to reuse as a schema")
     return "\n\n".join(statements)
+
+
+def _quote_identifier(name: str) -> str:
+    return '"' + name.replace('"', '""') + '"'
+
+
+def _database_table_summary(db_path: str) -> list[dict]:
+    if not os.path.exists(db_path):
+        return []
+
+    conn = sqlite3.connect(db_path)
+    try:
+        table_rows = conn.execute(
+            """
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table'
+              AND name NOT LIKE 'sqlite_%'
+              AND name NOT LIKE 'stg_%'
+              AND name NOT LIKE 'mart_%'
+            ORDER BY name
+            """
+        ).fetchall()
+        tables = []
+        for (name,) in table_rows:
+            quoted = _quote_identifier(name)
+            row_count = conn.execute(f"SELECT COUNT(*) FROM {quoted}").fetchone()[0]
+            columns = [
+                row[1]
+                for row in conn.execute(f"PRAGMA table_info({quoted})").fetchall()
+            ]
+            tables.append({
+                "table": name,
+                "rows": row_count,
+                "columns": columns,
+                "database": db_path,
+            })
+        return tables
+    finally:
+        conn.close()
+
+
+def _model_identifier(value: str) -> str:
+    name = re.sub(r"[^a-zA-Z0-9_]+", "_", value.strip().lower()).strip("_")
+    if not name:
+        name = "model"
+    if name[0].isdigit():
+        name = f"_{name}"
+    return name
+
+
+def _prepare_dbt_project() -> dict:
+    tables = _database_table_summary(_project_db_path())
+    if not tables:
+        raise HTTPException(400, "project.db has no tables to prepare for dbt")
+
+    base = Path(DBT_DIR)
+    models_dir = base / "models"
+    staging_dir = models_dir / "staging"
+    marts_dir = models_dir / "marts"
+    custom_dir = models_dir / "custom"
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    marts_dir.mkdir(parents=True, exist_ok=True)
+    custom_dir.mkdir(parents=True, exist_ok=True)
+
+    written: list[str] = []
+    skipped: list[str] = []
+    backup_path = backup_dbt_project(DBT_DIR, "prepare_config")
+
+    def write(path: Path, content: str):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content.strip() + "\n", encoding="utf-8")
+        written.append(str(path))
+
+    def write_if_missing(path: Path, content: str):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists():
+            skipped.append(str(path))
+            return
+        path.write_text(content.strip() + "\n", encoding="utf-8")
+        written.append(str(path))
+
+    write(
+        base / "dbt_project.yml",
+        """
+name: dbmapper
+version: '1.0'
+config-version: 2
+
+profile: dbmapper_sqlite
+
+model-paths: ["models"]
+
+models:
+  dbmapper:
+    staging:
+      +materialized: view
+    marts:
+      +materialized: table
+        """,
+    )
+
+    write(
+        base / "profiles.yml",
+        f"""
+dbmapper_sqlite:
+  target: dev
+  outputs:
+    dev:
+      type: sqlite
+      threads: 1
+      database: {Path(_project_db_path()).resolve()}
+      schema: main
+      schemas_and_paths:
+        main: {Path(_project_db_path()).resolve()}
+      schema_directory: {Path("data/database").resolve()}
+        """,
+    )
+
+    source_lines = ["version: 2", "", "sources:", "  - name: project", "    schema: main", "    tables:"]
+    for table in tables:
+        source_lines.append(f"      - name: {table['table']}")
+        source_lines.append("        columns:")
+        for column in table["columns"]:
+            source_lines.append(f"          - name: {column}")
+    write(models_dir / "sources.yml", "\n".join(source_lines))
+
+    for table in tables:
+        model_name = _model_identifier(table["table"])
+        write_if_missing(
+            staging_dir / f"stg_{model_name}.sql",
+            f"""
+select
+    *
+from {{{{ source('project', '{table["table"]}') }}}}
+            """,
+        )
+        write_if_missing(
+            marts_dir / f"mart_{model_name}.sql",
+            f"""
+select
+    *
+from {{{{ ref('stg_{model_name}') }}}}
+            """,
+        )
+    write_if_missing(
+        custom_dir / ".gitkeep",
+        "# Custom dbt models can live here. DBMapper will not overwrite this folder.",
+    )
+
+    return {
+        "dbt_path": str(base),
+        "tables": tables,
+        "files": written,
+        "skipped_files": skipped,
+        "backup_path": backup_path,
+    }
+
+
+def _safe_dbt_file_path(relative_path: str) -> Path:
+    rel = Path(relative_path)
+    if rel.is_absolute() or ".." in rel.parts:
+        raise HTTPException(400, "Unsafe dbt file path")
+    if rel.suffix.lower() not in {".sql", ".yml", ".yaml", ".json"}:
+        raise HTTPException(400, "Unsupported dbt file type")
+    base = Path(DBT_DIR).resolve()
+    target = (base / rel).resolve()
+    if not str(target).startswith(str(base)):
+        raise HTTPException(400, "Unsafe dbt file path")
+    return target
+
+
+def _list_dbt_files() -> list[dict]:
+    base = Path(DBT_DIR)
+    if not base.exists():
+        return []
+    files = []
+    for pattern in ("*.yml", "*.json", "models/**/*.sql", "models/**/*.yml"):
+        for path in base.glob(pattern):
+            if path.is_file():
+                if any(part.startswith(".") for part in path.relative_to(base).parts):
+                    continue
+                files.append({
+                    "path": path.relative_to(base).as_posix(),
+                    "content": path.read_text(encoding="utf-8"),
+                })
+    return sorted(files, key=lambda item: item["path"])
 
 
 async def _run_graph_and_enqueue(session_id: str, initial_state: dict):
@@ -240,8 +439,8 @@ async def start_session(session_id: str, schema_mode: str = "upload"):
         f"[SESSION] start id={session_id} schema_mode={schema_mode} upload_dir={upload_dir.resolve()}",
         flush=True,
     )
-    if schema_mode not in {"upload", "generate", "project"}:
-        raise HTTPException(400, "schema_mode must be upload, generate, or project")
+    if schema_mode not in {"upload", "generate", "project", "extend"}:
+        raise HTTPException(400, "schema_mode must be upload, generate, project, or extend")
 
     all_files = list(upload_dir.iterdir())
     data_files = [str(f) for f in all_files if f.suffix.lower() in (".csv", ".json")]
@@ -254,7 +453,7 @@ async def start_session(session_id: str, schema_mode: str = "upload"):
 
     if schema_mode == "upload":
         ddl_content = ddl_files[0].read_text()
-    elif schema_mode == "project":
+    elif schema_mode in {"project", "extend"}:
         ddl_content = _project_schema_ddl()
     else:
         ddl_content = ""
@@ -267,6 +466,7 @@ async def start_session(session_id: str, schema_mode: str = "upload"):
         "intermediate_catalog": [],
         "target_tables": [],
         "selected_tables": [],
+        "raw_tables": [],
         "proposed_mappings": [],
         "confirmed_mappings": [],
         "rows_loaded": {},
@@ -341,6 +541,97 @@ async def download_project_schema():
     )
 
 
+@app.get("/database/tables")
+async def get_project_database_tables():
+    db_path = _project_db_path()
+    return {
+        "database": db_path,
+        "tables": _database_table_summary(db_path),
+    }
+
+
+@app.post("/database/dbt/prepare")
+async def prepare_project_dbt():
+    return _prepare_dbt_project()
+
+
+@app.post("/database/dbt/generate")
+async def generate_project_dbt_transformations():
+    try:
+        return generate_dbt_transformations(_project_db_path(), DBT_DIR)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/database/dbt/preview")
+async def preview_project_dbt_transformations():
+    try:
+        return preview_dbt_transformations(_project_db_path(), DBT_DIR)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/database/dbt/apply")
+async def apply_project_dbt_transformations():
+    try:
+        return apply_pending_dbt_transformations(_project_db_path(), DBT_DIR)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+class DbtFeedbackBody(BaseModel):
+    feedback: str
+
+
+@app.post("/database/dbt/feedback")
+async def dbt_feedback(body: DbtFeedbackBody):
+    try:
+        return refine_dbt_transformations(_project_db_path(), DBT_DIR, body.feedback)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.get("/database/dbt/files")
+async def list_project_dbt_files():
+    return {
+        "dbt_path": DBT_DIR,
+        "files": _list_dbt_files(),
+    }
+
+
+@app.get("/database/dbt/files/{path:path}")
+async def get_project_dbt_file(path: str):
+    target = _safe_dbt_file_path(path)
+    if not target.exists():
+        raise HTTPException(404, "dbt file not found")
+    return {
+        "path": path,
+        "content": target.read_text(encoding="utf-8"),
+    }
+
+
+@app.post("/database/dbt/run-all")
+async def run_all_project_dbt_commands():
+    results = []
+    for command in ["debug", "compile", "build", "test"]:
+        result = run_dbt_command(DBT_DIR, command, _project_db_path())
+        results.append(result)
+        if result["status"] != "ok":
+            break
+    return {
+        "status": "ok" if len(results) == 4 and all(r["status"] == "ok" for r in results) else "error",
+        "results": results,
+    }
+
+
+@app.post("/database/dbt/{command}")
+async def run_project_dbt_command(command: str):
+    try:
+        return run_dbt_command(DBT_DIR, command, _project_db_path())
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 class SchemaConfirmBody(BaseModel):
     ddl_content: str
 
@@ -384,6 +675,12 @@ async def confirm_schema(session_id: str, body: SchemaConfirmBody):
 async def get_catalog(session_id: str):
     state = _get_state(session_id)
     return {"catalog": state.get("intermediate_catalog", [])}
+
+
+@app.get("/sessions/{session_id}/raw-tables")
+async def get_raw_tables(session_id: str):
+    state = _get_state(session_id)
+    return {"raw_tables": state.get("raw_tables", [])}
 
 
 class TableSelectionBody(BaseModel):

@@ -1,0 +1,36 @@
+version: 2
+
+sources:
+  - name: project
+    schema: main
+    tables:
+      - name: customer
+        columns:
+          - name: customer_id
+          - name: full_name
+          - name: email
+          - name: phone
+          - name: city
+      - name: member
+        columns:
+          - name: member_id
+          - name: customer_id
+      - name: order
+        columns:
+          - name: order_id
+          - name: customer_id
+          - name: product_id
+          - name: quantity
+          - name: price
+          - name: order_date
+      - name: product
+        columns:
+          - name: product_id
+          - name: product_name
+      - name: transaction
+        columns:
+          - name: transaction_id
+          - name: member_id
+          - name: points_earned
+          - name: tier
+          - name: activity_date

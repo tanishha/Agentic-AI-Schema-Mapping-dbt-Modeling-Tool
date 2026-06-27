@@ -12,6 +12,8 @@ click==8.4.1
 colorama==0.4.6
 cryptography==49.0.0
 distro==1.9.0
+dbt-core==1.11.11
+dbt-sqlite==1.10.0
 Faker==40.23.0
 fastapi==0.138.0
 h11==0.16.0

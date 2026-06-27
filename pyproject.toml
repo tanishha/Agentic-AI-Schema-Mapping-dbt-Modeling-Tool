@@ -12,6 +12,8 @@ dependencies = [
     "charset-normalizer==3.4.7",
     "click==8.4.1",
     "distro==1.9.0",
+    "dbt-core==1.11.11",
+    "dbt-sqlite==1.10.0",
     "fastapi==0.138.0",
     "h11==0.16.0",
     "httpcore==1.0.9",

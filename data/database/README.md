@@ -23,6 +23,12 @@ If the `sqlite3` command is not installed, use the Python runner:
 
 ```powershell
 .\venv\Scripts\python.exe data/database/run_sql.py data/database/scripts/table_counts.sql
+
+# Source/final tables only
+.\venv\Scripts\python.exe data/database/run_sql.py data/database/scripts/source_table_counts.sql
+
+# dbt staging and mart objects only
+.\venv\Scripts\python.exe data/database/run_sql.py data/database/scripts/dbt_table_counts.sql
 ```
 
 To run the same scripts against a session-specific DB:

@@ -1,0 +1,228 @@
+{
+  "summary": "This dbt transformation plan covers the cleaning, staging, and enrichment of five SQLite tables: customer, member, order, product, and transaction. The plan includes staging models for data cleaning, mart models for pass-through, and enriched marts that join related tables based on declared foreign keys. Data quality is enforced with uniqueness, not-null, and relationship tests. All logic is conservative and does not invent columns or tables.",
+  "tables": [
+    {
+      "name": "customer",
+      "staging_model": "stg_customer",
+      "mart_model": "mart_customer",
+      "cleaning": [
+        {
+          "column": "customer_id",
+          "logic": "Cast to INTEGER if needed; ensure no leading/trailing whitespace."
+        },
+        {
+          "column": "full_name",
+          "logic": "Trim leading/trailing whitespace."
+        },
+        {
+          "column": "email",
+          "logic": "Trim leading/trailing whitespace."
+        },
+        {
+          "column": "phone",
+          "logic": "Trim leading/trailing whitespace."
+        },
+        {
+          "column": "city",
+          "logic": "Trim leading/trailing whitespace."
+        }
+      ]
+    },
+    {
+      "name": "member",
+      "staging_model": "stg_member",
+      "mart_model": "mart_member",
+      "cleaning": [
+        {
+          "column": "member_id",
+          "logic": "Trim leading/trailing whitespace."
+        },
+        {
+          "column": "customer_id",
+          "logic": "Cast to INTEGER if needed; ensure no leading/trailing whitespace."
+        }
+      ]
+    },
+    {
+      "name": "order",
+      "staging_model": "stg_order",
+      "mart_model": "mart_order",
+      "cleaning": [
+        {
+          "column": "order_id",
+          "logic": "Cast to INTEGER if needed; ensure no leading/trailing whitespace."
+        },
+        {
+          "column": "customer_id",
+          "logic": "Cast to INTEGER if needed; ensure no leading/trailing whitespace."
+        },
+        {
+          "column": "product_id",
+          "logic": "Cast to INTEGER if needed; ensure no leading/trailing whitespace."
+        },
+        {
+          "column": "quantity",
+          "logic": "Cast to INTEGER if needed; ensure no leading/trailing whitespace."
+        },
+        {
+          "column": "price",
+          "logic": "Cast to REAL if needed; ensure no leading/trailing whitespace."
+        },
+        {
+          "column": "order_date",
+          "logic": "Trim leading/trailing whitespace."
+        }
+      ]
+    },
+    {
+      "name": "product",
+      "staging_model": "stg_product",
+      "mart_model": "mart_product",
+      "cleaning": [
+        {
+          "column": "product_id",
+          "logic": "Cast to INTEGER if needed; ensure no leading/trailing whitespace."
+        },
+        {
+          "column": "product_name",
+          "logic": "Trim leading/trailing whitespace."
+        }
+      ]
+    },
+    {
+      "name": "transaction",
+      "staging_model": "stg_transaction",
+      "mart_model": "mart_transaction",
+      "cleaning": [
+        {
+          "column": "transaction_id",
+          "logic": "Trim leading/trailing whitespace."
+        },
+        {
+          "column": "member_id",
+          "logic": "Trim leading/trailing whitespace."
+        },
+        {
+          "column": "points_earned",
+          "logic": "Cast to INTEGER if needed; ensure no leading/trailing whitespace."
+        },
+        {
+          "column": "tier",
+          "logic": "Trim leading/trailing whitespace."
+        },
+        {
+          "column": "activity_date",
+          "logic": "Trim leading/trailing whitespace."
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "child_table": "member",
+      "child_column": "customer_id",
+      "parent_table": "customer",
+      "parent_column": "customer_id",
+      "source": "declared_fk"
+    },
+    {
+      "child_table": "order",
+      "child_column": "product_id",
+      "parent_table": "product",
+      "parent_column": "product_id",
+      "source": "declared_fk"
+    },
+    {
+      "child_table": "order",
+      "child_column": "customer_id",
+      "parent_table": "customer",
+      "parent_column": "customer_id",
+      "source": "declared_fk"
+    },
+    {
+      "child_table": "transaction",
+      "child_column": "member_id",
+      "parent_table": "member",
+      "parent_column": "member_id",
+      "source": "declared_fk"
+    }
+  ],
+  "derived_models": [
+    {
+      "name": "mart_member_enriched",
+      "logic": "Left join stg_member to stg_customer on customer_id to provide customer details for each member."
+    },
+    {
+      "name": "mart_order_enriched",
+      "logic": "Left join stg_order to stg_customer on customer_id and to stg_product on product_id to provide customer and product details for each order."
+    },
+    {
+      "name": "mart_transaction_enriched",
+      "logic": "Left join stg_transaction to stg_member on member_id, and then to stg_customer on member.customer_id, to provide member and customer details for each transaction."
+    }
+  ],
+  "tests": [
+    {
+      "type": "unique",
+      "columns": [
+        "customer.customer_id",
+        "member.member_id",
+        "order.order_id",
+        "product.product_id",
+        "transaction.transaction_id"
+      ]
+    },
+    {
+      "type": "not_null",
+      "columns": [
+        "customer.customer_id",
+        "member.member_id",
+        "order.order_id",
+        "order.customer_id",
+        "order.product_id",
+        "product.product_id",
+        "product.product_name",
+        "transaction.transaction_id",
+        "transaction.member_id"
+      ]
+    },
+    {
+      "type": "relationships",
+      "relationships": [
+        {
+          "from_table": "member",
+          "from_column": "customer_id",
+          "to_table": "customer",
+          "to_column": "customer_id"
+        },
+        {
+          "from_table": "order",
+          "from_column": "customer_id",
+          "to_table": "customer",
+          "to_column": "customer_id"
+        },
+        {
+          "from_table": "order",
+          "from_column": "product_id",
+          "to_table": "product",
+          "to_column": "product_id"
+        },
+        {
+          "from_table": "transaction",
+          "from_column": "member_id",
+          "to_table": "member",
+          "to_column": "member_id"
+        }
+      ]
+    }
+  ],
+  "assumptions": [
+    "No additional columns or tables are created beyond those in the schema.",
+    "All joins in derived models are left joins to preserve child table records even if parent data is missing.",
+    "Cleaning is conservative: only type casting and trimming whitespace; no imputation or transformation of values.",
+    "Date fields (order_date, activity_date) are left as TEXT and not parsed or reformatted.",
+    "No business logic is inferred for derived fields beyond joining related tables.",
+    "Tests are only applied to declared primary keys, not-null columns, and foreign key relationships."
+  ],
+  "source": "llm"
+}

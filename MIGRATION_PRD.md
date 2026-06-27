@@ -1,391 +1,271 @@
-# PRD: DBMapper Agentic Schema Migration Tool
+# PRD: DBMapper Agentic Data Migration and dbt Workspace
 
-**Version:** 1.5  
-**Date:** 2026-06-26  
+**Version:** 2.0  
+**Date:** 2026-06-27  
 **Status:** Implemented / evolving
 
----
+## 1. Product Summary
 
-## 1. Summary
+DBMapper is a local browser-based data-engineering workspace that uses deterministic Python/SQLite/dbt execution plus LLM-powered agents to move from raw CSV/JSON files to validated SQLite target tables and dbt transformation models.
 
-DBMapper is a local browser-based migration tool for loading CSV and JSON source files into SQLite. It supports three target-schema paths:
-
-1. Upload an existing `target_schema.sql`.
-2. Generate a suggested schema from uploaded source files.
-3. Reuse the current schema from `data/database/project.db`.
-
-The system profiles source files, parses and validates the target schema, lets the user select target tables, asks an LLM to infer source-to-target mappings, lets the user edit mappings, and writes data into SQLite.
-
-The main components are:
-
-- FastAPI server for routes, SSE, uploads, downloads, and session management.
-- LangGraph workflow for profiling, schema generation/parsing, mapping, and migration stages.
-- Plain HTML/CSS/JS UI in `static/index.html`.
-- SQLite databases for session output, project output, and graph checkpoints.
-- LLM provider abstraction in `llm_client.py` supporting Azure AI Foundry and Ollama.
-
----
+The product supports first-time schema design, iterative schema extension, source-to-target mapping, human review, repeatable SQLite loading, ERD visualization, dbt model generation, dbt test generation, and dbt execution from a single UI.
 
 ## 2. Goals
 
 | ID | Goal |
 |---|---|
-| G1 | Accept one or more CSV/JSON source files per migration session |
-| G2 | Support uploaded, generated, and project DB schema modes |
-| G3 | Profile source columns before LLM mapping |
-| G4 | Validate schema syntax and FK references before mapping |
-| G5 | Let the user select target tables before mapping |
-| G6 | Infer mappings with confidence and reason text |
-| G7 | Let users edit mappings before data is loaded |
-| G8 | Write to a session-specific `migration.db` and shared `project.db` |
-| G9 | Show row counts, validation, ERD, and downloadable outputs |
-| G10 | Print session folder paths in the terminal for easier debugging |
+| G1 | Accept multiple CSV/JSON files per migration session |
+| G2 | Support uploaded, generated, reused, and extended target schemas |
+| G3 | Profile source files before any LLM mapping or schema generation |
+| G4 | Validate DDL syntax and FK semantics before mapping |
+| G5 | Let the user choose target tables before mapping |
+| G6 | Use LLM agents to infer mappings, schemas, relationships, dbt plans, dbt SQL, and dbt tests |
+| G7 | Keep human approval before database migration or dbt file application |
+| G8 | Write per-session `migration.db` and persistent `project.db` |
+| G9 | Show migration results, validation, ERD, and downloadable outputs |
+| G10 | Provide dbt debug/compile/build/test from the UI |
+| G11 | Preserve existing dbt SQL model files and backup before AI updates |
 
-### Out of Scope
+## 3. Non-Goals
 
-- Authentication and multi-tenant access control
-- Cloud database targets
-- Automatic lookup-table key propagation for synthetic parent IDs
-- Scheduled/recurring batch loads
-- Large-file chunked migration
+- Authentication and multi-tenant security
+- Cloud warehouse targets
+- Production orchestration and scheduling
+- Large-file distributed processing
+- Automatic deployment to a remote dbt platform
+- Full automatic data-contract governance
 
----
+## 4. Current End-to-End Workflow
 
-## 3. User Flow
+```text
+Upload CSV/JSON files
+  -> source profiling
+  -> raw/session load
+  -> schema upload/generation/reuse/extension
+  -> DDL parse and SQLite validation
+  -> target table selection
+  -> LLM mapping inference
+  -> human mapping review
+  -> session/project SQLite migration
+  -> validation + ERD + report
+  -> dbt project preparation
+  -> AI transformation preview
+  -> human approval/apply
+  -> dbt debug/compile/build/test
+```
 
-### Step 1: Choose Schema Source and Upload
-
-The UI asks the user to choose one schema mode:
+## 5. Schema Modes
 
 | Mode | Description | Required files |
 |---|---|---|
-| Upload `target_schema.sql` | User supplies existing target DDL | CSV/JSON + one SQL file |
-| Generate suggested schema | AI generates SQLite DDL from source profiles | CSV/JSON only |
-| Use `project.db` schema | Server extracts DDL from existing project DB | CSV/JSON only |
+| Upload final schema SQL | User supplies existing target DDL | CSV/JSON + one SQL file |
+| Generate final schema | AI generates SQLite DDL from source profiles | CSV/JSON only |
+| Use `project.db` final schema | Server extracts existing final-table DDL from `project.db` | CSV/JSON only |
+| Extend `project.db` final schema | AI proposes connected schema additions using current DB schema + new source profiles | CSV/JSON only |
 
-### Step 2: Profile Source Files
+Generated and extended schemas are editable. The user can manually change DDL or ask the schema agent for feedback-driven revisions before parsing and mapping.
 
-`FileProfilerAgent` loads CSV/JSON files through `agents/data_io.py`, flattens JSON where needed, and produces an intermediate catalog with:
+## 6. Agentic AI Responsibilities
 
-- source file
-- column name
-- inferred type
-- null percentage
-- distinct count
-- sample values
+| Agent capability | Implementation area | Role |
+|---|---|---|
+| Source-aware schema generation | `agents/schema_generation.py` | Creates SQLite DDL from profiled files and sample-driven context |
+| Schema extension | `agents/schema_generation.py` | Adds tables/columns/relationships while considering current `project.db` schema |
+| Schema feedback loop | `agents/schema_generation.py` + UI chat | Applies user instructions to regenerate/refine DDL |
+| Mapping inference | `agents/mapping_inference.py` | Maps target columns to source file/column candidates with confidence and reasons |
+| Mapping sanitization | `agents/mapping_inference.py` | Rejects invented source columns and supports skipped generated integer PKs |
+| Relationship reasoning | `agents/dbt_generation.py` | Uses declared/inferred FK metadata to plan joins and enriched marts |
+| dbt transformation planning | `agents/dbt_generation.py` | Produces a transformation plan covering staging, marts, cleaning, joins, tests, assumptions |
+| dbt SQL generation | `agents/dbt_generation.py` | Generates staging models, mart models, enriched relationship models, and `schema.yml` tests |
+| dbt feedback loop | `agents/dbt_generation.py` + UI chat | Lets users request changes to generated dbt logic before/after apply |
 
-### Step 3: Schema Generation or Parsing
+The LLM is not used for low-level execution. File parsing, DDL validation, SQLite writes, dbt commands, and SQL script execution are deterministic. The LLM is used where semantic judgment is useful: schema design, mapping intent, relationship interpretation, transformation planning, and iterative refinement.
 
-For uploaded SQL and project DB schema modes:
+## 7. Human-in-the-Loop Controls
 
-- DDL is parsed by `DDLParserAgent`.
+Human review is required at key decision points:
 
-For generated mode:
+- Generated schema is shown before use.
+- Schema feedback can be requested before parsing.
+- Target tables must be selected before mapping.
+- Proposed mappings can be edited before migration.
+- Required mapping issues are shown as reasons rather than silently disabling migration.
+- dbt transformations are previewed before files are applied.
+- dbt feedback updates create a backup before writing.
 
-- `SchemaGenerationAgent` creates SQLite DDL from the source catalog.
-- The user can edit the DDL directly.
-- The user can provide feedback to regenerate/refine the schema.
-- The user can download the draft schema before continuing.
-
-### Step 4: Schema Validation
-
-Before table selection:
-
-- DDL is executed in an in-memory SQLite database.
-- FK references are checked against parsed table/column names.
-- Syntax or semantic errors block progression.
-
-Examples:
-
-- Unquoted reserved table names like `order` fail.
-- FK references to missing tables fail.
-- FK references to missing columns fail.
-
-### Step 5: Table Selection
-
-The user selects one or more target tables to populate.
-
-### Step 6: Mapping Inference
-
-`MappingInferenceAgent` sends the selected target schema and source catalog to the LLM. It returns one mapping row per target column.
-
-Rules:
-
-- Source file/column must exist in the profiled catalog.
-- Invented source columns are sanitized to `null`.
-- Auto-generated integer primary keys can be skipped.
-- Required non-PK / FK columns must have mappings before migration.
-
-### Step 7: Human Review
-
-The user reviews mappings table-by-table.
-
-`Confirm & Migrate` stays clickable. If required mappings are missing, the UI displays a reason instead of silently disabling the button.
-
-### Step 8: Migration
-
-`DataMigrationAgent`:
-
-- creates/recreates session DB tables
-- creates missing project DB tables
-- applies confirmed mappings
-- inserts transformed rows
-- validates FK and NOT NULL constraints
-- writes `report.json`
-
-### Step 9: Done
-
-The UI shows:
-
-- row counts by table/file
-- migration status and reason
-- validation cards
-- ERD diagram
-- downloads for `migration.db`, `report.json`, and `target_schema.sql`
-
----
-
-## 4. Architecture
+## 8. Architecture
 
 ```text
 Browser UI
-  | upload files
-  | SSE progress
-  | REST actions
+  | REST + SSE
   v
-FastAPI server
-  | manages sessions and upload folders
-  | invokes LangGraph / direct stage helpers
+FastAPI
+  | session management
+  | upload/download
+  | dbt command endpoints
   v
 LangGraph workflow
   | file_profiler
-  | schema_generation? / ddl_parser
-  | table_selection interrupt
+  | raw_loader
+  | schema_generation / ddl_parser
+  | table_selection
   | mapping_inference
-  | human_review interrupt
+  | human_review
   | data_migration
   v
-SQLite outputs
+SQLite + dbt
   | data/uploads/<session-id>/migration.db
   | data/database/project.db
-  | data/checkpoints.db
+  | data/dbt/
 ```
 
----
-
-## 5. LangGraph Flow
-
-Current graph:
+## 9. LangGraph Flow
 
 ```text
 file_profiler
+  -> raw_loader
   -> conditional:
        schema_mode=generate -> schema_generation -> schema_review -> ddl_parser
-       schema_mode=upload/project -> ddl_parser
+       schema_mode=extend   -> schema_generation -> schema_review -> ddl_parser
+       schema_mode=upload   -> ddl_parser
+       schema_mode=project  -> ddl_parser
   -> table_selection
   -> mapping_inference
   -> human_review
   -> data_migration
 ```
 
-Interrupt points:
+Interrupt/review points:
 
-- `schema_review` for generated schemas
-- `table_selection`
-- `human_review`
+- Generated/extended schema review
+- Target table selection
+- Mapping review
+- dbt transformation preview/apply outside LangGraph via FastAPI endpoints
 
-Some transitions are handled directly by FastAPI helper functions instead of full graph resume to avoid stale SSE event replay.
+## 10. Data Storage
 
----
+| Store | Path | Lifecycle | Purpose |
+|---|---|---|---|
+| Upload folder | `data/uploads/<session-id>/` | Per session | Uploaded files, session DB, report |
+| Session DB | `data/uploads/<session-id>/migration.db` | Recreated per migration | What loaded in one session |
+| Project DB | `data/database/project.db` | Persistent | Shared accumulated/final database |
+| Checkpoint DB | `data/checkpoints.db` | Persistent | LangGraph state |
+| dbt project | `data/dbt/` | Persistent project artifact | dbt config, models, schema tests, plan |
 
-## 6. API Design
+SQLite has no credential layer in this project. Database access is file-based.
+
+## 11. dbt Product Behavior
+
+The dbt screen operates on existing `project.db` tables. It can be opened after migration or from the upload screen when data already exists.
+
+| Action | Behavior |
+|---|---|
+| Refresh Table List | Reads current source/final tables and row counts from `project.db` |
+| Prepare dbt Project | Refreshes dbt config/sources and creates missing starter files only |
+| Transformations | Calls AI planning and returns a preview; does not write dbt files |
+| Apply Transformations | Applies the pending preview, creates a backup, writes new/generated metadata, and preserves existing SQL models |
+| Apply dbt Feedback | Sends user feedback to the LLM and writes returned dbt files after backup |
+| dbt debug | Checks dbt profile/project/adapter setup |
+| dbt compile | Compiles model graph and SQL |
+| dbt build | Runs models and tests |
+| dbt test | Runs tests only |
+| Run All dbt Steps | Runs debug -> compile -> build -> test |
+
+dbt model conventions:
+
+- Staging models use `stg_` prefix.
+- Mart models use `mart_` prefix.
+- Enriched relationship marts use `mart_<child>_enriched`.
+- Existing SQL model files are preserved by transformation sync.
+- Manual models should live in `data/dbt/models/custom/`.
+
+## 12. API Surface
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/` | Serve UI |
-| `POST` | `/sessions` | Create session and upload folder |
+| `POST` | `/sessions` | Create session |
 | `POST` | `/sessions/{id}/upload` | Upload source/schema files |
-| `POST` | `/sessions/{id}/start?schema_mode=...` | Start profiling/schema flow |
-| `GET` | `/sessions/{id}/events` | SSE progress stream |
+| `POST` | `/sessions/{id}/start?schema_mode=...` | Start workflow |
+| `GET` | `/sessions/{id}/events` | SSE progress |
 | `GET` | `/sessions/{id}/schema-draft` | Return current DDL draft |
-| `POST` | `/sessions/{id}/schema-feedback` | Refine DDL using user feedback |
-| `POST` | `/sessions/{id}/confirm-schema` | Validate/parse edited DDL |
-| `GET` | `/sessions/{id}/schema` | Return parsed target schema |
-| `GET` | `/sessions/{id}/catalog` | Return source profile catalog |
+| `POST` | `/sessions/{id}/schema-feedback` | Refine DDL with AI feedback |
+| `POST` | `/sessions/{id}/confirm-schema` | Parse/validate edited DDL |
 | `POST` | `/sessions/{id}/select-tables` | Select target tables and infer mappings |
 | `GET` | `/sessions/{id}/mappings` | Return proposed mappings |
 | `PUT` | `/sessions/{id}/mappings/{mapping_id}` | Edit one mapping |
 | `POST` | `/sessions/{id}/confirm` | Run migration |
-| `POST` | `/sessions/{id}/remigrate` | Rerun migration after editing mappings |
-| `GET` | `/sessions/{id}/validate` | Validate session DB |
-| `GET` | `/sessions/{id}/result` | Return migration result summary |
-| `GET` | `/sessions/{id}/download/db` | Download `migration.db` |
-| `GET` | `/sessions/{id}/download/report` | Download `report.json` |
-| `GET` | `/sessions/{id}/download/schema` | Download current session schema |
-| `GET` | `/database/download/schema` | Download `project.db` schema |
-| `POST` | `/sessions/{id}/reset` | Delete session upload folder |
+| `POST` | `/sessions/{id}/remigrate` | Rerun migration after mapping edits |
+| `GET` | `/sessions/{id}/download/db` | Download session DB |
+| `GET` | `/sessions/{id}/download/report` | Download report |
+| `GET` | `/sessions/{id}/download/schema` | Download session schema |
+| `GET` | `/database/tables` | List current `project.db` tables |
+| `POST` | `/database/dbt/prepare` | Prepare dbt project |
+| `POST` | `/database/dbt/preview` | Preview AI dbt transformations |
+| `POST` | `/database/dbt/apply` | Apply pending dbt preview |
+| `POST` | `/database/dbt/feedback` | Apply AI dbt feedback update |
+| `GET` | `/database/dbt/files` | List dbt files |
+| `GET` | `/database/dbt/files/{path}` | Read one dbt file |
+| `POST` | `/database/dbt/{command}` | Run `debug`, `compile`, `build`, or `test` |
+| `POST` | `/database/dbt/run-all` | Run all dbt steps |
 
-### SSE Event Types
+## 13. Validation Strategy
 
-```json
-{"type": "profiling_progress", "payload": {"file": "source.csv", "columns": 6}}
-{"type": "schema_generated", "payload": {"source": "llm", "ddl": "..."}}
-{"type": "ddl_parsed", "payload": {"tables": [{"name": "customer", "columns": 5}]}}
-{"type": "mapping_ready", "payload": {"mappings": []}}
-{"type": "migration_progress", "payload": {"table": "customer", "file": "source.csv", "rows": 100}}
-{"type": "done", "payload": {"total_rows": 100}}
-{"type": "error", "payload": {"message": "..."}}
-{"type": "stream_end"}
-```
-
----
-
-## 7. Data and Storage
-
-### Session Upload Folder
-
-Path:
-
-```text
-data/uploads/<session-id>/
-```
-
-Contents:
-
-```text
-<source files>
-target_schema.sql          # only if uploaded by user
-migration.db               # created after migration
-report.json                # created after migration
-```
-
-The terminal logs the session folder:
-
-```text
-[SESSION] created id=<uuid> upload_dir=C:\...\data\uploads\<uuid>
-[SESSION] upload id=<uuid> upload_dir=C:\...\data\uploads\<uuid> files=[...]
-[SESSION] start id=<uuid> schema_mode=project upload_dir=C:\...\data\uploads\<uuid>
-```
-
-### Database Behavior
-
-| DB | Path | Lifecycle | Insert behavior |
-|---|---|---|---|
-| Session DB | `data/uploads/<session-id>/migration.db` | Recreated per run | `INSERT` |
-| Project DB | `data/database/project.db` | Persistent | `INSERT OR REPLACE` |
-| Checkpoint DB | `data/checkpoints.db` | Persistent graph state | LangGraph-managed |
-
-There are no DB credentials because SQLite uses local files.
-
----
-
-## 8. Agent Responsibilities
-
-### `agents/data_io.py`
-
-Shared CSV/JSON loader. Handles normal JSON, JSONL, nested JSON flattening, BOM-tolerant UTF-8, and display serialization for dict/list values.
-
-### `agents/file_profiler.py`
-
-Builds source catalog from uploaded files. No LLM call.
-
-### `agents/schema_generation.py`
-
-Generates SQLite DDL from source profiles. Supports user feedback refinement. Falls back to a conservative file/table-based schema when LLM is unavailable.
-
-### `agents/ddl_parser.py`
-
-Parses DDL using `sqlglot`, extracts:
-
-- tables
-- columns
-- SQL types
-- nullable flags
-- primary keys
-- inline and table-level foreign keys
-
-Then validates the DDL in SQLite and checks FK references.
-
-### `agents/mapping_inference.py`
-
-Uses LLM to infer mappings. Sanitizes invented source columns. Allows synthetic integer primary keys to stay unmapped.
-
-### `agents/data_migration.py`
-
-Loads transformed data into session DB and project DB, validates, emits progress, and writes `report.json`.
-
----
-
-## 9. Database Scripts
-
-Location:
-
-```text
-data/database/scripts/
-```
-
-| Script | Purpose |
+| Stage | Validation |
 |---|---|
-| `table_counts.sql` | Count rows |
-| `select_all.sql` | Select data |
-| `delete_all_data.sql` | Delete rows, keep schema |
-| `drop_all_tables.sql` | Drop schema |
+| Source profiling | CSV/JSON parse, inferred types, null rates, samples |
+| DDL parse | SQL syntax, table/column extraction, PK/FK metadata |
+| DDL validation | In-memory SQLite execution and FK reference validation |
+| Mapping inference | Source existence checks, invented-column sanitization |
+| Migration | Row counts, insert status, constraint errors |
+| DB validation | FK checks, NOT NULL checks |
+| dbt compile | SQL syntax and dependency graph validation |
+| dbt build | Model execution and materialization |
+| dbt test | not_null, unique, relationships tests |
 
-Run with:
-
-```powershell
-.\venv\Scripts\python.exe data/database/run_sql.py data/database/scripts/table_counts.sql
-.\venv\Scripts\python.exe data/database/run_sql.py table_counts.sql --db project.db
-.\venv\Scripts\python.exe data/database/run_sql.py table_counts.sql --db data/uploads/<session-id>/migration.db
-```
-
----
-
-## 10. Environment Variables
-
-| Variable | Description |
-|---|---|
-| `LLM_PROVIDER` | `azure` or `ollama` |
-| `AZURE_OPENAI_ENDPOINT` | Azure OpenAI-compatible endpoint |
-| `AZURE_OPENAI_API_KEY` | Azure API key |
-| `AZURE_OPENAI_DEPLOYMENT` | Main model deployment |
-| `AZURE_OPENAI_DEPLOYMENT_FAST` | Fast/fallback model deployment |
-| `LLM_BASE_URL` | Ollama/OpenAI-compatible URL |
-| `LLM_MODEL` | Main Ollama model |
-| `LLM_MODEL_FAST` | Fast Ollama model |
-| `LLM_API_KEY` | API key value for OpenAI SDK |
-| `UPLOAD_DIR` | Upload root, default `data/uploads` |
-| `CHECKPOINT_DB` | LangGraph checkpoint DB |
-| `MIGRATION_DB` | Project DB path |
-| `PROFILER_SAMPLE_ROWS` | Max rows sampled by profiler |
-
----
-
-## 11. Functional Requirements
+## 14. Functional Requirements
 
 | ID | Requirement |
 |---|---|
-| FR-01 | System must accept one or more CSV/JSON source files |
-| FR-02 | System must support uploaded, generated, and project DB schema modes |
-| FR-03 | Generated schemas must be editable before mapping |
-| FR-04 | User must be able to refine generated schema with feedback |
-| FR-05 | Schema must be validated before table selection |
-| FR-06 | User must be able to select target tables |
-| FR-07 | Mapping inference must only run for selected tables |
-| FR-08 | User must be able to edit mappings |
-| FR-09 | Confirm action must show reasons when required mappings are missing |
-| FR-10 | Auto-generated integer primary keys may be skipped |
-| FR-11 | Session DB and project DB must both be written |
-| FR-12 | DB, report, and schema must be downloadable |
-| FR-13 | Terminal must log active session upload folder |
-| FR-14 | ERD must show tables, FK lines, and cardinality |
+| FR-01 | Accept CSV and JSON source files |
+| FR-02 | Support uploaded/generated/project/extended schema modes |
+| FR-03 | Profile files before schema generation and mapping |
+| FR-04 | Validate DDL before table selection |
+| FR-05 | Let users select target tables |
+| FR-06 | Infer mappings with confidence and reason text |
+| FR-07 | Let users edit mappings before migration |
+| FR-08 | Allow generated integer PKs to be skipped |
+| FR-09 | Show reasons when migration cannot proceed |
+| FR-10 | Write session DB and project DB |
+| FR-11 | Show row counts, validation, and ERD |
+| FR-12 | Download DB/report/schema |
+| FR-13 | Prepare dbt project from `project.db` |
+| FR-14 | Preview dbt transformation changes before writing |
+| FR-15 | Preserve existing dbt SQL models during transformation sync |
+| FR-16 | Backup dbt files before AI feedback/apply changes |
+| FR-17 | Run dbt debug/compile/build/test from UI |
 
----
+## 15. Current Limitations
 
-## 12. Open Questions / Future Work
+- SQLite is the only database target.
+- dbt is local and uses `dbt-sqlite`.
+- Raw/source mirroring into dbt sources is basic.
+- dbt AI generation is conservative and relationship-driven, not a full semantic transformation compiler.
+- AI-generated SQL still requires user review and dbt validation.
+- Production orchestration is expected to be a later layer after this setup workspace.
 
-1. Add lookup-stage migration for synthetic parent IDs and child FKs.
-2. Add chunked loading for large files.
-3. Add session cleanup / TTL.
-4. Add richer transformation expressions beyond simple `df.eval`.
-5. Add authentication if deployed outside local development.
+## 16. Future Work
+
+| Priority | Item |
+|---|---|
+| P1 | Add AI dbt debugger that reads failing dbt output and proposes patches |
+| P1 | Add side-by-side diff for dbt preview and feedback updates |
+| P2 | Add raw table preview and sample-data lineage |
+| P2 | Add richer transformation expressions and lookup/key strategies |
+| P2 | Add dbt documentation generation for models and columns |
+| P3 | Add project export/package support |
+| P3 | Add scheduler/orchestrator handoff for repeatable production runs |
+| P3 | Add cloud warehouse adapters |
+
+## 17. Product Positioning
+
+DBMapper is best understood as an initial setup and iterative design workspace for AI-assisted data migration and transformation. It is not trying to replace production orchestration. Instead, it helps a data engineer quickly understand source files, design or extend a target schema, generate mapping logic, validate loads, generate dbt transformations, and establish reusable transformation assets that can later be moved into scheduled pipelines.
